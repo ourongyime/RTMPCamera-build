@@ -1,0 +1,37 @@
+﻿#!/bin/bash
+# postinst - RTMPCamera 安装后脚本
+# RootHide 无根越狱兼容
+
+if [ -d "/var/jb" ]; then
+    PREFIX="/var/jb"
+else
+    PREFIX=""
+fi
+
+echo "RTMPCamera: 开始安装..."
+
+# 创建所有必要的目录
+mkdir -p "$PREFIX/Applications/RTMPCameraApp.app"
+mkdir -p "$PREFIX/usr/local/bin"
+mkdir -p "$PREFIX/Library/MobileSubstrate/DynamicLibraries"
+mkdir -p "$PREFIX/Library/LaunchDaemons"
+
+# 确保 daemon 可执行
+chmod 755 "$PREFIX/usr/local/bin/RTMPDaemon" 2>/dev/null
+chmod 755 "$PREFIX/Applications/RTMPCameraApp.app/RTMPCameraApp" 2>/dev/null
+
+# 加载守护进程
+if [ -f "$PREFIX/Library/LaunchDaemons/com.rtmpcamera.daemon.plist" ]; then
+    launchctl unload "$PREFIX/Library/LaunchDaemons/com.rtmpcamera.daemon.plist" 2>/dev/null
+    launchctl load "$PREFIX/Library/LaunchDaemons/com.rtmpcamera.daemon.plist"
+    echo "RTMPCamera: 守护进程已加载"
+fi
+
+# 刷新图标缓存 (uicache)
+if command -v uicache &>/dev/null; then
+    uicache -p "$PREFIX/Applications"
+    echo "RTMPCamera: 图标缓存已刷新"
+fi
+
+echo "RTMPCamera: 安装完成"
+exit 0

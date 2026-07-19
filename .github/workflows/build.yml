@@ -1,0 +1,55 @@
+﻿name: Build RTMPCamera
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - name: Checkout 代码
+        uses: actions/checkout@v4
+
+      - name: 安装编译工具
+        run: |
+          brew install make ldid xz
+
+      - name: 设置 Theos
+        run: |
+          git clone --recursive https://github.com/theos/theos.git /opt/theos
+          echo "THEOS=/opt/theos" >> $GITHUB_ENV
+
+      - name: 设置 SDK
+        run: |
+          SDK_PATH=$(xcrun --sdk iphoneos --show-sdk-path)
+          SDK_VERSION=$(xcrun --sdk iphoneos --show-sdk-version)
+          echo "SDK_PATH=$SDK_PATH" >> $GITHUB_ENV
+          echo "SDK_VERSION=$SDK_VERSION" >> $GITHUB_ENV
+          echo "SDK 路径: $SDK_PATH"
+          echo "SDK 版本: $SDK_VERSION"
+          # 创建 SDK 软链接到 Theos
+          mkdir -p /opt/theos/sdks
+          ln -sf "$SDK_PATH" "/opt/theos/sdks/iPhoneOS${SDK_VERSION}.sdk"
+          echo "已创建 SDK 软链接"
+          ls -la /opt/theos/sdks/
+
+      - name: 编译 deb 包
+        run: |
+          export THEOS=/opt/theos
+          export SDKVERSION=$SDK_VERSION
+          echo "开始编译..."
+          make package FINALPACKAGE=1
+
+      - name: 上传 deb 包 (Artifact)
+        uses: actions/upload-artifact@v4
+        with:
+          name: RTMPCamera-deb
+          path: packages/*.deb
+
+      - name: 显示产出
+        run: |
+          echo "=== 编译产物 ==="
+          ls -la packages/
+          echo "=== 完成 ==="

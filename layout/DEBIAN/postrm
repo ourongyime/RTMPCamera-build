@@ -1,0 +1,17 @@
+﻿#!/bin/bash
+# postrm - RTMPCamera 卸载后脚本
+
+if [ -d "/var/jb" ]; then
+    PREFIX="/var/jb"
+else
+    PREFIX=""
+fi
+
+echo "RTMPCamera: 清理残留..."
+
+# 删除可能残留的共享内存文件
+rm -f /tmp/rtmpcamera_shared_frame 2>/dev/null
+rm -f /tmp/rtmpcamera_control 2>/dev/null
+
+echo "RTMPCamera: 清理完成"
+exit 0

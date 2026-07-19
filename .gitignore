@@ -1,0 +1,17 @@
+﻿# Theos 编译产物
+.deb
+_obj/
+_packages/
+packages/
+*.dylib.D*.gch
+.DS_Store
+
+# Xcode
+*.xcuserdata
+*.xcworkspace
+DerivedData/
+
+# Temp
+*.swp
+*.swo
+*~
