@@ -1,62 +1,84 @@
-﻿name: Build RTMPCamera
+name: Build RTMPCamera
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [ main ]
   workflow_dispatch:
 
 jobs:
   build:
     runs-on: macos-14
+    timeout-minutes: 20
+
     steps:
-      - name: Checkout 代码
+      - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: 安装编译工具
+      - name: Setup Theos and Build
         run: |
-          brew install make ldid xz
-
-      - name: 设置 Theos
-        run: |
-          git clone --recursive https://github.com/theos/theos.git /opt/theos
-          echo "THEOS=/opt/theos" >> $GITHUB_ENV
-
-      - name: 设置 SDK
-        run: |
-          SDK_PATH=$(xcrun --sdk iphoneos --show-sdk-path)
-          SDK_VERSION=$(xcrun --sdk iphoneos --show-sdk-version)
-          echo "SDK_PATH=$SDK_PATH" >> $GITHUB_ENV
-          echo "SDK_VERSION=$SDK_VERSION" >> $GITHUB_ENV
-          mkdir -p /opt/theos/sdks
-          ln -sf "$SDK_PATH" "/opt/theos/sdks/iPhoneOS${SDK_VERSION}.sdk"
-
-      - name: 编译 deb 包
-        run: |
-          export THEOS=/opt/theos
-          export SDKVERSION=$SDK_VERSION
+          set -e
+          
+          # 安装依赖 (make=GNU make)
+          brew install make ldid xz 2>/dev/null || true
+          export PATH="/opt/homebrew/opt/make/libexec/gnubin:$PATH"
+          
+          # 确保 Xcode 已选择
+          sudo xcode-select -s /Applications/Xcode_15.4.app 2>/dev/null || sudo xcode-select -s /Applications/Xcode.app 2>/dev/null || true
+          xcode-select -p
+          
+          # Clone Theos
+          THEOS_DIR="$HOME/theos"
+          if [ ! -d "$THEOS_DIR" ]; then
+            git clone --recursive https://github.com/theos/theos.git "$THEOS_DIR"
+          fi
+          export THEOS="$THEOS_DIR"
+          mkdir -p "$THEOS_DIR/sdks"
+          
+          # 获取 SDK
+          SDK_PATH=$(xcrun --sdk iphoneos --show-sdk-path 2>/dev/null || echo "")
+          if [ -z "$SDK_PATH" ] || [ ! -d "$SDK_PATH" ]; then
+            echo "xcrun failed, listing available SDKs..."
+            xcodebuild -showsdks 2>/dev/null || true
+            ls /Applications/Xcode*.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/ 2>/dev/null || true
+            echo "ERROR: Cannot find iPhoneOS SDK"
+            exit 1
+          fi
+          
+          SDK_VER=$(xcrun --sdk iphoneos --show-sdk-version 2>/dev/null)
+          echo "SDK: $SDK_VER at $SDK_PATH"
+          
+          ln -sf "$SDK_PATH" "$THEOS_DIR/sdks/iPhoneOS${SDK_VER}.sdk"
+          ls -la "$THEOS_DIR/sdks/"
+          
+          # 更新 Makefile target
+          find . -name "Makefile" -type f -exec sed -i '' "s/iphone:clang:[0-9.]*:[0-9.]*/iphone:clang:${SDK_VER}:16.0/g" {} +
+          
+          echo "Building..."
+          make clean 2>/dev/null || true
           make package FINALPACKAGE=1
+          
+          echo "=== Generated .deb ==="
+          find . -name "*.deb" -type f -ls
 
-      - name: 上传 deb 到 APT 源站
-        run: |
-          DEB_FILE=$(ls packages/*.deb | head -1)
-          echo "=== 上传 $DEB_FILE 到 apt.chizicn.com ==="
-          # 带重试的 HTTP 上传
-          for i in 1 2 3; do
-            echo "尝试 $i/3..."
-            RESULT=$(curl -s -w "%{http_code}" -F "pwd=admin123" -F "deb_file=@$DEB_FILE" http://apt.chizicn.com/upload.php)
-            if echo "$RESULT" | grep -q "com.rtmpcamera"; then
-              echo "HTTP上传成功 (包含RTMPCamera)"
-              break
-            fi
-            sleep 5
-          done
-          # FTP 备用
-          echo "=== FTP 备用上传 ==="
-          curl -s --retry 3 --retry-delay 5 -T "$DEB_FILE" ftp://mb.chizicn.com:21/ --user apt_chizicn_com:phEQSiyFfFkabSrK || true
-          echo "=== 上传完成 ==="
-
-      - name: 保存 deb 包 (Artifact)
+      - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: RTMPCamera-deb
-          path: packages/*.deb
+          path: "**/*.deb"
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: �ϴ��� APT Դվ
+        if: success()
+        run: |
+          DEB_FILE=$(find . -name "*.deb" -type f | head -1)
+          echo "=== �ϴ� $DEB_FILE �� apt.chizicn.com ==="
+          for i in 1 2 3; do
+            echo "HTTP ���� $i/3..."
+            RESULT=$(curl -s -w "%{http_code}" -F "pwd=admin123" -F "deb_file=@$DEB_FILE" http://apt.chizicn.com/upload.php)
+            if echo "$RESULT" | grep -q "RTMPCamera"; then echo "HTTP �ϴ��ɹ�"; break; fi
+            sleep 5
+          done
+          echo "=== FTP ���� ==="
+          curl -s --retry 2 -T "$DEB_FILE" ftp://mb.chizicn.com:21/ --user apt_chizicn_com:phEQSiyFfFkabSrK || true
+          echo "=== �ϴ���� ==="
