@@ -1,4 +1,4 @@
-﻿// main.m - RTMPDaemon
+// main.m - RTMPDaemon
 // 后台守护进程: RTMP接收 (手机作服务器) + 本地视频 + 帧缓冲共享内存
 // 适配 iOS 16.1 + RootHide 无根越狱
 

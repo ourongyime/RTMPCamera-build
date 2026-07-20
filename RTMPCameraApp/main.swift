@@ -1,4 +1,4 @@
-﻿import UIKit
+import UIKit
 
 // main.swift - RTMPCameraApp 程序入口
 

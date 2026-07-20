@@ -1,4 +1,4 @@
-﻿// SharedFrame.h v1.0.2 - 共享内存帧结构定义
+// SharedFrame.h v1.0.2 - 共享内存帧结构定义
 // 新增: 日志系统 + 状态反馈
 
 #ifndef SharedFrame_h

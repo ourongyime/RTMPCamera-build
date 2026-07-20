@@ -1,4 +1,4 @@
-﻿import UIKit
+import UIKit
 
 // AppDelegate.swift
 // RTMPCameraApp 入口 - 注意: main.swift 定义了 UIApplicationMain, 此处不能用 @main

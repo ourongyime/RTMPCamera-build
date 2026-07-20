@@ -1,4 +1,4 @@
-﻿#!/bin/bash
+#!/bin/bash
 # upload-to-apt.sh - 上传 deb 包到 apt.chizicn.com
 # 使用前确保 packages/ 下有编译好的 deb 包
 

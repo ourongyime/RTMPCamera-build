@@ -1,4 +1,4 @@
-﻿name: Build RTMPCamera (macOS Cross-Compile)
+name: Build RTMPCamera (macOS Cross-Compile)
 
 on:
   push:
@@ -18,7 +18,6 @@ jobs:
           git clone --recursive https://github.com/theos/theos.git "$THEOS_DIR" --depth 1 2>/dev/null || true
           echo "THEOS=$THEOS_DIR" >> $GITHUB_ENV
           mkdir -p "$THEOS_DIR/sdks"
-          # Download iOS SDK
           SDK_URL="https://github.com/theos/sdks/releases/download/master-146e41f/iPhoneOS16.5.sdk.tar.xz"
           curl -fsSL --retry 3 -o /tmp/sdk.tar.xz "$SDK_URL"
           tar -xf /tmp/sdk.tar.xz -C $THEOS_DIR/sdks/
@@ -28,8 +27,6 @@ jobs:
         run: |
           export THEOS=$HOME/theos
           export SDKVERSION=16.5
-          export TARGET=iphone:clang:16.5:16.0
-          find . -name "Makefile" -type f -exec sed -i '' "s/iphone:clang:[0-9.]*:[0-9.]*/iphone:clang:16.5:16.0/g" {} +
           make package FINALPACKAGE=1
 
       - name: Upload Artifact

@@ -1,4 +1,4 @@
-﻿#!/bin/bash
+#!/bin/bash
 # backup-version.sh - 备份当前源码到 backups/v{VERSION}/
 # 用法: bash backup-version.sh
 

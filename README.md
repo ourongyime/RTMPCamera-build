@@ -1,4 +1,4 @@
-﻿# RTMPCamera - iOS 虚拟摄像头
+# RTMPCamera - iOS 虚拟摄像头
 
 将 OBS RTMP 推流 / 本地视频 / 测试帧注入为 iOS 系统摄像头画面，替换微信、视频号等 App 的摄像头输入。
 

@@ -1,4 +1,4 @@
-﻿// Tweak.x - RTMPCameraTweak
+// Tweak.x - RTMPCameraTweak
 // Hook AVFoundation 将共享内存中的视频帧注入为系统摄像头画面
 // 使用代理模式拦截 AVCaptureVideoDataOutput delegate 回调
 // 支持视频/音频注入独立开关

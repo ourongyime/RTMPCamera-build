@@ -1,4 +1,4 @@
-﻿# backup.ps1 - 备份当前源码
+# backup.ps1 - 备份当前源码
 $ver = Get-Content "VERSION" -ErrorAction SilentlyContinue
 if (-not $ver) { $ver = "unknown" }
 $dir = "backups\v$ver"
