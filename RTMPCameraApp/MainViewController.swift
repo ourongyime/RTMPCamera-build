@@ -507,24 +507,28 @@ class MainViewController: UIViewController {
 
 
 
+
     private func sendControlCommand() {
         let sourceNames = ["真实摄像头", "RTMP推流", "本地视频"]
         addLog("应用设置: \(sourceNames[currentSource.rawValue]) 视频注入=\(videoInjectionOn ? "开" : "关") 音频注入=\(audioInjectionOn ? "开" : "关")")
-        let dir = "/var/jb/tmp"
-        try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true, attributes: nil)
+        
         let dict: [String: Any] = [
             "command": 1, "sourceType": currentSource.rawValue,
             "videoInjectionEnabled": videoInjectionOn, "audioInjectionEnabled": audioInjectionOn,
             "loopEnabled": loopEnabled, "rtmpURL": rtmpURL, "localVideoPath": localVideoPath
         ]
         if let data = try? PropertyListSerialization.data(fromPropertyList: dict, format: .xml, options: 0) {
-            let path = dir + "/rtmpcamera_control.plist"
+            // 写入临时目录（应用沙箱内，保证可写）
+            let tmpDir = NSTemporaryDirectory()
+            let path = tmpDir + "rtmpcamera_control.plist"
             do {
                 try data.write(to: URL(fileURLWithPath: path), options: .atomic)
-                addLog("控制文件已写入: \(path)")
+                addLog("控制文件已写入")
             } catch {
-                addLog("控制文件写入失败: \(error.localizedDescription)")
+                addLog("写入失败: \(error.localizedDescription)")
             }
+        } else {
+            addLog("序列化失败")
         }
     }
     private func loadSavedConfig() {
