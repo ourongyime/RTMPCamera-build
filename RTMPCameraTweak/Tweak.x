@@ -11,6 +11,8 @@
 #import <objc/runtime.h>
 #import <objc/message.h>
 #import <substrate.h>
+#import <CoreImage/CoreImage.h>
+#import <pthread.h>
 
 // ============================================================
 // Paths
@@ -104,8 +106,7 @@ static BOOL startVideoPlayback(void) {
     NSDictionary *settings = @{
         (id)kCVPixelBufferPixelFormatTypeKey: @(kCVPixelFormatType_32BGRA)
     };
-    g_output = [AVAssetReaderTrackOutput alloc];
-    g_output = [g_output initWithTrack:tracks[0] outputSettings:settings];
+    g_output = [[AVAssetReaderTrackOutput alloc] initWithTrack:tracks[0] outputSettings:settings];
     if (![g_reader canAddOutput:g_output]) { tlog(@"Cannot add output"); stopVideoPlayback(); return NO; }
     [g_reader addOutput:g_output];
     
