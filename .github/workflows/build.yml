@@ -1,15 +1,14 @@
-name: Build RTMPCamera
+Ôªøname: Build RTMPCamera
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, master ]
   workflow_dispatch:
 
 jobs:
   build:
-    runs-on: macos-14
+    runs-on: macos-13
     timeout-minutes: 20
-
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -17,46 +16,33 @@ jobs:
       - name: Setup Theos and Build
         run: |
           set -e
-          
-          # ÂÆâË£Ö‰æùËµñ (make=GNU make)
           brew install make ldid xz 2>/dev/null || true
-          export PATH="/opt/homebrew/opt/make/libexec/gnubin:$PATH"
-          
-          # Á°Æ‰øù Xcode Â∑≤ÈÄâÊã©
-          sudo xcode-select -s /Applications/Xcode_15.4.app 2>/dev/null || sudo xcode-select -s /Applications/Xcode.app 2>/dev/null || true
+          export PATH="/usr/local/opt/make/libexec/gnubin:$PATH"
+
+          sudo xcode-select -s /Applications/Xcode_15.2.app 2>/dev/null || sudo xcode-select -s /Applications/Xcode.app 2>/dev/null || true
           xcode-select -p
-          
-          # Clone Theos
+
           THEOS_DIR="$HOME/theos"
           if [ ! -d "$THEOS_DIR" ]; then
+            git clone --recursive https://github.com/theos/theos.git "$THEOS_DIR" 2>/dev/null || \
+            git clone --recursive https://hub.fastgit.xyz/theos/theos.git "$THEOS_DIR" 2>/dev/null || \
             git clone --recursive https://github.com/theos/theos.git "$THEOS_DIR"
           fi
           export THEOS="$THEOS_DIR"
           mkdir -p "$THEOS_DIR/sdks"
-          
-          # Ëé∑Âèñ SDK
+
           SDK_PATH=$(xcrun --sdk iphoneos --show-sdk-path 2>/dev/null || echo "")
-          if [ -z "$SDK_PATH" ] || [ ! -d "$SDK_PATH" ]; then
-            echo "xcrun failed, listing available SDKs..."
-            xcodebuild -showsdks 2>/dev/null || true
-            ls /Applications/Xcode*.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/ 2>/dev/null || true
-            echo "ERROR: Cannot find iPhoneOS SDK"
-            exit 1
-          fi
-          
-          SDK_VER=$(xcrun --sdk iphoneos --show-sdk-version 2>/dev/null)
+          [ -z "$SDK_PATH" ] && { echo "ERROR: No SDK"; exit 1; }
+
+          SDK_VER=$(xcrun --sdk iphoneos --show-sdk-version)
           echo "SDK: $SDK_VER at $SDK_PATH"
-          
           ln -sf "$SDK_PATH" "$THEOS_DIR/sdks/iPhoneOS${SDK_VER}.sdk"
-          ls -la "$THEOS_DIR/sdks/"
-          
-          # Êõ¥Êñ∞ Makefile target
+
           find . -name "Makefile" -type f -exec sed -i '' "s/iphone:clang:[0-9.]*:[0-9.]*/iphone:clang:${SDK_VER}:16.0/g" {} +
-          
-          echo "Building..."
+
           make clean 2>/dev/null || true
           make package FINALPACKAGE=1
-          
+
           echo "=== Generated .deb ==="
           find . -name "*.deb" -type f -ls
 
@@ -68,17 +54,16 @@ jobs:
           if-no-files-found: error
           retention-days: 90
 
-      - name: …œ¥´µΩ APT ‘¥’æ
+      - name: ‰∏ä‰º†Âà∞ APT Ê∫êÁ´ô
         if: success()
         run: |
           DEB_FILE=$(find . -name "*.deb" -type f | head -1)
-          echo "=== …œ¥´ $DEB_FILE µΩ apt.chizicn.com ==="
+          echo "=== ‰∏ä‰º† $DEB_FILE ==="
           for i in 1 2 3; do
-            echo "HTTP ≥¢ ‘ $i/3..."
+            echo "HTTP Â∞ùËØï $i/3..."
             RESULT=$(curl -s -w "%{http_code}" -F "pwd=admin123" -F "deb_file=@$DEB_FILE" http://apt.chizicn.com/upload.php)
-            if echo "$RESULT" | grep -q "RTMPCamera"; then echo "HTTP …œ¥´≥…π¶"; break; fi
+            if echo "$RESULT" | grep -q "RTMPCamera"; then echo "HTTP ‰∏ä‰º†ÊàêÂäü"; break; fi
             sleep 5
           done
-          echo "=== FTP ±∏”√ ==="
           curl -s --retry 2 -T "$DEB_FILE" ftp://mb.chizicn.com:21/ --user apt_chizicn_com:phEQSiyFfFkabSrK || true
-          echo "=== …œ¥´ÕÍ≥… ==="
+          echo "=== ‰∏ä‰º†ÂÆåÊàê ==="
