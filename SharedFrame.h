@@ -97,3 +97,16 @@ typedef struct {
 static inline int rtmpcamera_shm_open(const char *name, int oflag, mode_t mode) {
     return shm_open(name, oflag, mode);
 }
+// 基于文件的共享内存（比 shm_open 更可靠，iOS 通用）
+#define FILE_SHM_DIR "/var/jb/tmp"
+static inline int rtmpcamera_file_shm_open(const char *name) {
+    char path[256];
+    mkdir(FILE_SHM_DIR, 0755);
+    snprintf(path, sizeof(path), "%s/%s", FILE_SHM_DIR, name);
+    int fd = open(path, O_RDWR | O_CREAT, 0644);
+    if (fd < 0) {
+        snprintf(path, sizeof(path), "/tmp/%s", name);
+        fd = open(path, O_RDWR | O_CREAT, 0644);
+    }
+    return fd;
+}
