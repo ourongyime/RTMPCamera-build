@@ -535,7 +535,7 @@ class MainViewController: UIViewController {
         if let data = try? PropertyListSerialization.data(fromPropertyList: dict, format: .xml, options: 0) {
             let path = "\(dir)/rtmpcamera_control.plist"
             try? data.write(to: URL(fileURLWithPath: path), options: .atomic)
-            DispatchQueue.main.async { self.addLog("控制数据已写入") }
+            DispatchQueue.main.async { self.addLog("控制数据已写入 \(path)") }
         }
     }
     private func loadSavedConfig() {
