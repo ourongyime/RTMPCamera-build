@@ -187,7 +187,7 @@ static void writeFrameToSharedMemory(uint8_t *bgraData, size_t width, size_t hei
 // ============================================================
 
 static void *rtmpReceiveThread(void *arg) {
-    writeLog("RTMP 接收服务器启动 - 端口 1935") - 端口 1935");
+    writeLog("RTMP 接收服务器启动 - 端口 1935");
 
     int listenFD = socket(AF_INET, SOCK_STREAM, 0);
     if (listenFD < 0) {
@@ -216,7 +216,7 @@ static void *rtmpReceiveThread(void *arg) {
         return NULL;
     }
 
-    writeLog("RTMP 服务器已就绪, 等待 OBS 推流..."), 等待 OBS 推流...");
+    writeLog("RTMP 服务器已就绪, 等待 OBS 推流...");
 
     // 设置非阻塞
     int flags = fcntl(listenFD, F_GETFL, 0);
