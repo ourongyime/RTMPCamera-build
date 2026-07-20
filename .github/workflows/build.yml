@@ -23,6 +23,9 @@ jobs:
           tar -xf /tmp/sdk.tar.xz -C $THEOS_DIR/sdks/
           ls -la $THEOS_DIR/sdks/
 
+      - name: Install ldid
+        run: brew install ldid 2>/dev/null || echo 'ldid already installed'
+
       - name: Build
         run: |
           export THEOS=$HOME/theos
