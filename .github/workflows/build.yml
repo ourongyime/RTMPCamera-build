@@ -30,6 +30,7 @@ jobs:
         run: |
           export THEOS=$HOME/theos
           export SDKVERSION=16.5
+          chmod 755 layout/DEBIAN/*
           make package FINALPACKAGE=1
 
       - name: Upload Artifact
