@@ -1,4 +1,4 @@
-// Tweak.x - RTMPCameraTweak v1.0.29
+// Tweak.x - RTMPCameraTweak v1.0.26
 // File-based frame injection: VDO hook + PreviewLayer scanner
 // iOS 16.1 + Dopamine RootHide + ElleKit
 
@@ -130,7 +130,7 @@ static void scanLayers(CALayer *l, CGImageRef img) {
         g_lock = [NSObject new];
         [[NSFileManager defaultManager] createDirectoryAtPath:kDir withIntermediateDirectories:YES attributes:@{NSFilePosixPermissions:@0777} error:nil];
         [[NSData data] writeToFile:kLoadedFlag atomically:NO];
-        tlog(@"=== v1.0.29 LOADED ===");
+        tlog(@"=== v1.0.26 LOADED ===");
 
         // Status
         BOOL dirOk = [[NSFileManager defaultManager] fileExistsAtPath:kDir];
@@ -152,7 +152,7 @@ static void scanLayers(CALayer *l, CGImageRef img) {
         t = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER,0,0,dispatch_get_main_queue());
         dispatch_source_set_timer(t, dispatch_time(DISPATCH_TIME_NOW,1*NSEC_PER_SEC), (int64_t)(1.0/30.0*NSEC_PER_SEC), (int64_t)(0.005*NSEC_PER_SEC));
         dispatch_source_set_event_handler(t, ^{
-            if(!shouldInject())return; if(g_sourceType==2 && !g_reader) startVideo();
+            if(!shouldInject())return;
             CVPixelBufferRef pb = NULL;
             @synchronized(g_lock) {
                 pb = g_lastPB;
