@@ -1,4 +1,4 @@
-Package: com.rtmpcamera.camera
+﻿Package: com.rtmpcamera.camera
 Name: RTMPCamera
 Version: 1.0.16
 Architecture: iphoneos-arm64e
