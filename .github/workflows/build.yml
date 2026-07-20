@@ -1,4 +1,4 @@
-﻿name: Build RTMPCamera (Linux Cross-Compile)
+﻿name: Build RTMPCamera (macOS Cross-Compile)
 
 on:
   push:
@@ -7,44 +7,29 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-22.04
+    runs-on: macos-14
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Install Dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y clang git make perl curl xz-utils dpkg-dev fakeroot libplist-dev libssl-dev
-
-      - name: Build ldid
-        run: |
-          git clone https://github.com/ProcursusTeam/ldid.git /tmp/ldid --depth 1
-          cd /tmp/ldid
-          make -j$(nproc)
-          sudo cp ldid /usr/local/bin/
-          ldid --version || file /usr/local/bin/ldid
-
-      - name: Setup Theos on Linux
+      - name: Setup Theos
         run: |
           THEOS_DIR="$HOME/theos"
           git clone --recursive https://github.com/theos/theos.git "$THEOS_DIR" --depth 1 2>/dev/null || true
           echo "THEOS=$THEOS_DIR" >> $GITHUB_ENV
           mkdir -p "$THEOS_DIR/sdks"
-
-      - name: Download iOS SDK
-        run: |
+          # Download iOS SDK
           SDK_URL="https://github.com/theos/sdks/releases/download/master-146e41f/iPhoneOS16.5.sdk.tar.xz"
           curl -fsSL --retry 3 -o /tmp/sdk.tar.xz "$SDK_URL"
-          tar -xf /tmp/sdk.tar.xz -C $HOME/theos/sdks/
-          ls -la $HOME/theos/sdks/
+          tar -xf /tmp/sdk.tar.xz -C $THEOS_DIR/sdks/
+          ls -la $THEOS_DIR/sdks/
 
       - name: Build
         run: |
           export THEOS=$HOME/theos
           export SDKVERSION=16.5
           export TARGET=iphone:clang:16.5:16.0
-          find . -name "Makefile" -type f -exec sed -i "s/iphone:clang:[0-9.]*:[0-9.]*/iphone:clang:16.5:16.0/g" {} +
+          find . -name "Makefile" -type f -exec sed -i '' "s/iphone:clang:[0-9.]*:[0-9.]*/iphone:clang:16.5:16.0/g" {} +
           make package FINALPACKAGE=1
 
       - name: Upload Artifact
