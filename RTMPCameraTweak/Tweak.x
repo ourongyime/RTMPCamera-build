@@ -74,7 +74,7 @@ static BOOL startVideo(void) {
 static CVPixelBufferRef nextFrame(void) {
     if (!shouldInject() || g_sourceType != 2) return NULL;
     if (!g_reader || g_reader.status == AVAssetReaderStatusCompleted || g_reader.status == AVAssetReaderStatusFailed) {
-        if (g_loop) [self startVideo];
+        if (g_loop) startVideo();
         if (!g_reader) return NULL;
     }
     CMSampleBufferRef sb = [g_output copyNextSampleBuffer];
