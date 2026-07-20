@@ -20,7 +20,7 @@ ADDITIONAL_CFLAGS = -fobjc-arc -I$(THEOS_PROJECT_DIR)
 include $(THEOS_MAKE_PATH)/aggregate.mk
 
 # 閹垫挸瀵橀柊宥囩枂
-PACKAGE_VERSION = 1.0.14
+PACKAGE_VERSION = 1.0.15
 PACKAGE_BUILD = 1
 
 # 鐎瑰顥婇惄顔界�?(RootHide 鐠侯垰绶?

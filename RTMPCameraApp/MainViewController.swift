@@ -134,7 +134,7 @@ class MainViewController: UIViewController {
     private func pollLogFromDaemon() {
         sharedFrameQueue.async { [weak self] in
             guard let self = self else { return }
-            let fd = rtmpcamera_shm_open(LOG_MEMORY_NAME, O_RDONLY, 0)
+            let fd = rtmpcamera_file_shm_open("rtmpcamera_log.dat")
             guard fd >= 0 else { return }
             defer { close(fd) }
 
@@ -507,14 +507,10 @@ class MainViewController: UIViewController {
 
 
     private func openOrCreateControlMemory() -> Int32 {
-        // 先尝试打开已有的共享内存
-        var fd = rtmpcamera_shm_open(CONTROL_MEMORY_NAME, O_RDWR, 0)
-        if fd >= 0 { return fd }
-        // 不存在则创建（daemon 未启动时由 app 创建）
-        fd = rtmpcamera_shm_open(CONTROL_MEMORY_NAME, O_RDWR | O_CREAT, 0644)
+        // 使用文件 mmap 替代 shm_open（iOS 更可靠）
+        let fd = rtmpcamera_file_shm_open("rtmpcamera_control.dat")
         if fd >= 0 {
             ftruncate(fd, off_t(MemoryLayout<SharedControlData>.size))
-            addLog("控制内存已由 App 创建")
         }
         return fd
     }
