@@ -63,7 +63,7 @@ class MainViewController: UIViewController {
     private var logPollTimer: Timer?
     private let sharedFrameQueue = DispatchQueue(label: "com.rtmpcamera.app")
     private let defaultRTMPPort = 1935
-    private let appVersion = "1.0.20"
+    private let appVersion = "1.0.21"
 
     override func viewDidLoad() {
         super.viewDidLoad()
