@@ -147,7 +147,7 @@ class MainViewController: UIViewController {
             let total = Int(logBuf.pointee.totalCount)
             let start = max(0, total - 20)
             for i in start..<total {
-                let idx = i % MAX_LOG_ENTRIES
+                let idx = i % Int(MAX_LOG_ENTRIES)
                 let msg = String(cString: logBuf.pointee.entries[idx].message)
                 if !msg.isEmpty {
                     let src = ["Daemon","Tweak","App"][Int(logBuf.pointee.entries[idx].source) % 3]
@@ -511,7 +511,7 @@ class MainViewController: UIViewController {
             ctrl.pointee.loopEnabled = self.loopEnabled ? 1 : 0
             let url = self.rtmpURL.utf8CString
             withUnsafeMutablePointer(to: &ctrl.pointee.rtmpURL) { d in
-                _ = url.withUnsafeBytes { s in memcpy(d, s.baseAddress!, min(s.count, MAX_RTMP_URL_LENGTH-1)) }
+                _ = url.withUnsafeBytes { s in memcpy(d, s.baseAddress!, min(s.count, Int(MAX_RTMP_URL_LENGTH-1))) }
                 d[min(url.count, MAX_RTMP_URL_LENGTH-1)] = 0
             }
         }
