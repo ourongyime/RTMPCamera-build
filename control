@@ -1,8 +1,8 @@
 ﻿Package: com.rtmpcamera.camera
 Name: RTMPCamera
-Version: 1.0.0
+Version: 1.0.1
 Architecture: iphoneos-arm64e
-Description: iOS虚拟摄像头 - 通过RTMP拉流替换系统摄像头画面
+Description: iOS虚拟摄像头 - RTMP接收/本地视频/系统摄像头切换注入
 Maintainer: ourongyime <9450915@qq.com>
 Author: ourongyime <9450915@qq.com>
 Section: Tweaks

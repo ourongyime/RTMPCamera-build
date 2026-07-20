@@ -15,22 +15,24 @@
 // 共享内存名称
 #define SHARED_MEMORY_NAME "/tmp/rtmpcamera_shared_frame"
 
-// 视频源类型
+// 视频源类型 (移除测试帧)
 typedef NS_ENUM(NSInteger, RTMPVideoSource) {
     RTMPVideoSourceRealCamera = 0,  // 真实摄像头
-    RTMPVideoSourceRTMPStream,      // RTMP 拉流
+    RTMPVideoSourceRTMPStream,      // RTMP 接收 (手机作服务器)
     RTMPVideoSourceLocalVideo,      // 本地视频文件
-    RTMPVideoSourceTestPattern,     // 测试彩色帧
 };
 
 // 控制指令
 typedef NS_ENUM(NSInteger, RTMPControlCommand) {
     RTMPControlNone = 0,
-    RTMPControlSwitchSource,      // 切换视频源
-    RTMPControlSetRTMPURL,        // 设置 RTMP 地址
-    RTMPControlSetLocalVideoPath, // 设置本地视频路径
-    RTMPControlStart,             // 开始
-    RTMPControlStop,              // 停止
+    RTMPControlSwitchSource,         // 切换视频源
+    RTMPControlSetRTMPURL,           // 设置 RTMP 地址
+    RTMPControlSetLocalVideoPath,    // 设置本地视频路径
+    RTMPControlStart,                // 开始
+    RTMPControlStop,                 // 停止
+    RTMPControlSetInjection,         // 设置注入开关
+    RTMPControlSetLoop,              // 设置循环播放
+    RTMPControlReset,                // 还原默认设置
 };
 
 // 共享内存中的帧元数据
@@ -44,7 +46,10 @@ typedef struct {
     uint64_t timestamp;            // 时间戳 (mach_absolute_time)
     uint32_t sourceType;           // 视频源类型 (RTMPVideoSource)
     uint32_t dataSize;             // 实际数据大小
-    uint8_t  reserved[32];         // 保留字段
+    uint32_t videoInjectionEnabled; // 视频注入开关 (0=关, 1=开)
+    uint32_t audioInjectionEnabled; // 音频注入开关 (0=关, 1=开)
+    uint32_t loopEnabled;           // 循环播放 (0=关, 1=开)
+    uint8_t  reserved[20];         // 保留字段
 } SharedFrameHeader;
 
 // 共享内存布局:
@@ -67,9 +72,15 @@ typedef struct {
 typedef struct {
     uint32_t command;              // 控制指令 (RTMPControlCommand)
     uint32_t sourceType;           // 目标视频源类型
+    uint32_t videoInjectionEnabled; // 视频注入开关
+    uint32_t audioInjectionEnabled; // 音频注入开关
+    uint32_t loopEnabled;           // 循环播放
     char     rtmpURL[MAX_RTMP_URL_LENGTH];        // RTMP 地址
     char     localVideoPath[MAX_VIDEO_PATH_LENGTH]; // 本地视频路径
     uint8_t  reserved[64];         // 保留
 } SharedControlData;
+
+// 默认 RTMP 接收端口
+#define DEFAULT_RTMP_PORT 1935
 
 #endif /* SharedFrame_h */

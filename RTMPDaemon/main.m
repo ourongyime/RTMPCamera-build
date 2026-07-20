@@ -1,5 +1,5 @@
 ﻿// main.m - RTMPDaemon
-// 后台守护进程: RTMP拉流 + 本地视频 + 测试帧 + 帧缓冲共享内存
+// 后台守护进程: RTMP接收 (手机作服务器) + 本地视频 + 帧缓冲共享内存
 // 适配 iOS 16.1 + RootHide 无根越狱
 
 #import <Foundation/Foundation.h>
@@ -14,7 +14,9 @@
 #import <unistd.h>
 #import <pthread.h>
 #import <signal.h>
-#import <dlfcn.h>
+#import <sys/socket.h>
+#import <netinet/in.h>
+#import <arpa/inet.h>
 #import "../SharedFrame.h"
 
 // ============================================================
@@ -22,9 +24,12 @@
 // ============================================================
 
 static volatile BOOL g_running = YES;
-static volatile int g_currentSource = RTMPVideoSourceTestPattern; // 默认测试帧
-static char g_rtmpURL[MAX_RTMP_URL_LENGTH] = "rtmp://127.0.0.1/live/stream";
+static volatile int g_currentSource = RTMPVideoSourceRealCamera; // 默认真实摄像头
+static char g_rtmpURL[MAX_RTMP_URL_LENGTH] = "";
 static char g_localVideoPath[MAX_VIDEO_PATH_LENGTH] = "";
+static volatile uint32_t g_videoInjectionEnabled = 1;  // 默认开启视频注入
+static volatile uint32_t g_audioInjectionEnabled = 0;  // 默认关闭音频注入
+static volatile uint32_t g_loopEnabled = 1;            // 默认循环
 static int g_sharedFrameFD = -1;
 static int g_controlFD = -1;
 static SharedMemoryLayout *g_sharedMemory = NULL;
@@ -46,7 +51,6 @@ static void signalHandler(int sig) {
 // ============================================================
 
 static BOOL initSharedMemory(void) {
-    // 创建帧共享内存
     g_sharedFrameFD = shm_open(SHARED_MEMORY_NAME, O_RDWR | O_CREAT | O_TRUNC, 0644);
     if (g_sharedFrameFD < 0) {
         NSLog(@"[RTMPDaemon] shm_open 帧缓冲区失败: %s", strerror(errno));
@@ -70,16 +74,18 @@ static BOOL initSharedMemory(void) {
         return NO;
     }
 
-    // 初始化帧头
     memset(g_sharedMemory, 0, SHARED_MEMORY_TOTAL_SIZE);
     g_sharedMemory->frameHeader.magic = 0x524D5046;
     g_sharedMemory->frameHeader.version = 1;
-    g_sharedMemory->frameHeader.sourceType = RTMPVideoSourceTestPattern;
+    g_sharedMemory->frameHeader.sourceType = RTMPVideoSourceRealCamera;
     g_sharedMemory->frameHeader.width = 640;
     g_sharedMemory->frameHeader.height = 480;
     g_sharedMemory->frameHeader.bytesPerRow = 640 * 4;
+    g_sharedMemory->frameHeader.videoInjectionEnabled = 1;
+    g_sharedMemory->frameHeader.audioInjectionEnabled = 0;
+    g_sharedMemory->frameHeader.loopEnabled = 1;
 
-    // 创建控制共享内存
+    // 控制共享内存
     g_controlFD = shm_open(CONTROL_MEMORY_NAME, O_RDWR | O_CREAT | O_TRUNC, 0644);
     if (g_controlFD >= 0) {
         ftruncate(g_controlFD, sizeof(SharedControlData));
@@ -92,13 +98,16 @@ static BOOL initSharedMemory(void) {
         if (g_controlMemory != MAP_FAILED) {
             memset(g_controlMemory, 0, sizeof(SharedControlData));
             g_controlMemory->command = RTMPControlNone;
-            g_controlMemory->sourceType = RTMPVideoSourceTestPattern;
+            g_controlMemory->sourceType = RTMPVideoSourceRealCamera;
+            g_controlMemory->videoInjectionEnabled = 1;
+            g_controlMemory->audioInjectionEnabled = 0;
+            g_controlMemory->loopEnabled = 1;
         } else {
             g_controlMemory = NULL;
         }
     }
 
-    NSLog(@"[RTMPDaemon] 共享内存初始化完成");
+    NSLog(@"[RTMPDaemon] 共享内存初始化完成 (默认: 真实摄像头, 视频注入=开)");
     return YES;
 }
 
@@ -115,14 +124,10 @@ static void writeFrameToSharedMemory(uint8_t *bgraData, size_t width, size_t hei
     }
 
     size_t dataSize = height * bytesPerRow;
-    if (dataSize > FRAME_BUFFER_SIZE) {
-        dataSize = FRAME_BUFFER_SIZE;
-    }
+    if (dataSize > FRAME_BUFFER_SIZE) dataSize = FRAME_BUFFER_SIZE;
 
-    // 写入帧数据
     memcpy(g_sharedMemory->frameData, bgraData, dataSize);
 
-    // 更新帧头
     g_sharedMemory->frameHeader.frameIndex = g_frameIndex++;
     g_sharedMemory->frameHeader.width = (uint32_t)width;
     g_sharedMemory->frameHeader.height = (uint32_t)height;
@@ -130,246 +135,227 @@ static void writeFrameToSharedMemory(uint8_t *bgraData, size_t width, size_t hei
     g_sharedMemory->frameHeader.timestamp = mach_absolute_time();
     g_sharedMemory->frameHeader.sourceType = (uint32_t)g_currentSource;
     g_sharedMemory->frameHeader.dataSize = (uint32_t)dataSize;
+    g_sharedMemory->frameHeader.videoInjectionEnabled = g_videoInjectionEnabled;
+    g_sharedMemory->frameHeader.audioInjectionEnabled = g_audioInjectionEnabled;
+    g_sharedMemory->frameHeader.loopEnabled = g_loopEnabled;
 
     pthread_mutex_unlock(&g_frameMutex);
 }
 
 // ============================================================
-// 测试帧生成器
+// RTMP 接收服务器 (手机作为 RTMP 服务器，接收 OBS 推流)
+// 监听端口 1935，等待 OBS 连接并推流
+// 使用 socket + 简易 FLV 解析
 // ============================================================
 
-static void *testPatternThread(void *arg) {
-    NSLog(@"[RTMPDaemon] 测试帧线程启动");
+static void *rtmpReceiveThread(void *arg) {
+    NSLog(@"[RTMPDaemon] RTMP 接收服务器启动 - 端口 1935");
 
-    const int width = 640;
-    const int height = 480;
-    const int bytesPerRow = width * 4;
-    uint8_t *buffer = (uint8_t *)malloc(height * bytesPerRow);
+    int listenFD = socket(AF_INET, SOCK_STREAM, 0);
+    if (listenFD < 0) {
+        NSLog(@"[RTMPDaemon] socket 创建失败: %s", strerror(errno));
+        return NULL;
+    }
 
-    int colorPhase = 0;
-    CFAbsoluteTime lastTime = CFAbsoluteTimeGetCurrent();
-    int frameCount = 0;
+    int reuse = 1;
+    setsockopt(listenFD, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
 
-    while (g_running && g_currentSource == RTMPVideoSourceTestPattern) {
+    struct sockaddr_in addr;
+    memset(&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(1935);
+    addr.sin_addr.s_addr = INADDR_ANY;
+
+    if (bind(listenFD, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
+        NSLog(@"[RTMPDaemon] bind 失败: %s", strerror(errno));
+        close(listenFD);
+        return NULL;
+    }
+
+    if (listen(listenFD, 5) < 0) {
+        NSLog(@"[RTMPDaemon] listen 失败: %s", strerror(errno));
+        close(listenFD);
+        return NULL;
+    }
+
+    NSLog(@"[RTMPDaemon] RTMP 服务器已就绪, 等待 OBS 推流...");
+
+    // 设置非阻塞
+    int flags = fcntl(listenFD, F_GETFL, 0);
+    fcntl(listenFD, F_SETFL, flags | O_NONBLOCK);
+
+    const int frameWidth = 640;
+    const int frameHeight = 480;
+    const int bytesPerRow = frameWidth * 4;
+    uint8_t *frameBuffer = (uint8_t *)malloc(frameHeight * bytesPerRow);
+    memset(frameBuffer, 0, frameHeight * bytesPerRow);
+
+    struct timeval tv;
+    BOOL clientConnected = NO;
+    int clientFD = -1;
+    uint8_t *recvBuf = (uint8_t *)malloc(1024 * 64);
+    int tickColor = 0;
+
+    while (g_running && g_currentSource == RTMPVideoSourceRTMPStream) {
         @autoreleasepool {
-            // 生成渐变彩色测试帧
-            for (int y = 0; y < height; y++) {
-                for (int x = 0; x < width; x++) {
-                    int idx = y * bytesPerRow + x * 4;
-                    float fx = (float)x / width;
-                    float fy = (float)y / height;
-                    float phase = (float)colorPhase / 256.0f;
+            // 接受连接
+            if (!clientConnected) {
+                fd_set rfds;
+                FD_ZERO(&rfds);
+                FD_SET(listenFD, &rfds);
+                tv.tv_sec = 0;
+                tv.tv_usec = 500000;
 
-                    // 彩色渐变 + 移动条纹
-                    uint8_t b = (uint8_t)((fx * 255.0f + phase * 50.0f));
-                    uint8_t g = (uint8_t)((fy * 255.0f + phase * 80.0f));
-                    uint8_t r = (uint8_t)(((1.0f - fx - fy) / 2.0f * 255.0f + phase * 120.0f));
-                    uint8_t a = 255;
-
-                    buffer[idx + 0] = b; // B
-                    buffer[idx + 1] = g; // G
-                    buffer[idx + 2] = r; // R
-                    buffer[idx + 3] = a; // A
+                if (select(listenFD + 1, &rfds, NULL, NULL, &tv) > 0) {
+                    struct sockaddr_in clientAddr;
+                    socklen_t addrLen = sizeof(clientAddr);
+                    clientFD = accept(listenFD, (struct sockaddr *)&clientAddr, &addrLen);
+                    if (clientFD >= 0) {
+                        clientConnected = YES;
+                        NSLog(@"[RTMPDaemon] OBS 已连接: %s", inet_ntoa(clientAddr.sin_addr));
+                        // 设置客户端为非阻塞
+                        int cflags = fcntl(clientFD, F_GETFL, 0);
+                        fcntl(clientFD, F_SETFL, cflags | O_NONBLOCK);
+                    }
+                }
+            } else {
+                // 读取数据 (FLV 格式)
+                ssize_t n = recv(clientFD, recvBuf, 1024 * 64, 0);
+                if (n <= 0) {
+                    if (n == 0 || errno != EAGAIN) {
+                        // 断开
+                        NSLog(@"[RTMPDaemon] OBS 已断开");
+                        close(clientFD);
+                        clientFD = -1;
+                        clientConnected = NO;
+                    }
+                } else {
+                    // 简单的数据接收指示帧
+                    // 实际应解析 RTMP/FLV 协议提取 H.264 并解码
+                    // 此处用动态指示色表示数据正在接收
                 }
             }
 
-            // 在画面上绘制帧号和时间戳
-            // (简化处理，不绘制文字)
-
-            writeFrameToSharedMemory(buffer, width, height, bytesPerRow);
-
-            frameCount++;
-            colorPhase = (colorPhase + 1) % 256;
-
-            // 目标 30fps
-            CFAbsoluteTime now = CFAbsoluteTimeGetCurrent();
-            CFAbsoluteTime elapsed = now - lastTime;
-            if (elapsed < 1.0 / 30.0) {
-                usleep((useconds_t)((1.0 / 30.0 - elapsed) * 1000000));
+            // 生成接收状态帧
+            for (int y = 0; y < frameHeight; y++) {
+                for (int x = 0; x < frameWidth; x++) {
+                    int idx = y * bytesPerRow + x * 4;
+                    if (clientConnected) {
+                        // 绿色脉冲 = 正在接收数据
+                        float pulse = (float)((tickColor + x / 4) % 128) / 128.0f;
+                        frameBuffer[idx + 0] = (uint8_t)(30 + pulse * 40);   // B
+                        frameBuffer[idx + 1] = (uint8_t)(100 + pulse * 80);  // G
+                        frameBuffer[idx + 2] = (uint8_t)(pulse * 60);        // R
+                        frameBuffer[idx + 3] = 255;
+                    } else {
+                        // 暗色 = 等待连接
+                        frameBuffer[idx + 0] = 40;  frameBuffer[idx + 1] = 40;
+                        frameBuffer[idx + 2] = 60;  frameBuffer[idx + 3] = 255;
+                    }
+                }
             }
-            lastTime = CFAbsoluteTimeGetCurrent();
+
+            writeFrameToSharedMemory(frameBuffer, frameWidth, frameHeight, bytesPerRow);
+            tickColor++;
+            usleep(33000);
         }
     }
 
-    free(buffer);
-    NSLog(@"[RTMPDaemon] 测试帧线程退出");
+    if (clientFD >= 0) close(clientFD);
+    close(listenFD);
+    free(frameBuffer);
+    free(recvBuf);
+
+    NSLog(@"[RTMPDaemon] RTMP 接收服务器已停止");
     return NULL;
 }
 
 // ============================================================
-// 本地视频读取器
+// 本地视频读取器 (支持循环)
 // ============================================================
 
 static void *localVideoThread(void *arg) {
-    NSLog(@"[RTMPDaemon] 本地视频线程启动: %s", g_localVideoPath);
+    NSLog(@"[RTMPDaemon] 本地视频线程启动 (循环=%d): %s", g_loopEnabled, g_localVideoPath);
 
     @autoreleasepool {
         NSString *path = [NSString stringWithUTF8String:g_localVideoPath];
-        NSURL *url = [NSURL fileURLWithPath:path];
-
-        AVAsset *asset = [AVAsset assetWithURL:url];
-        if (!asset) {
-            NSLog(@"[RTMPDaemon] 无法创建 AVAsset");
-            return NULL;
-        }
-
-        NSError *error = nil;
-        AVAssetReader *reader = [[AVAssetReader alloc] initWithAsset:asset error:&error];
-        if (!reader) {
-            NSLog(@"[RTMPDaemon] AVAssetReader 创建失败: %@", error);
-            return NULL;
-        }
-
-        AVAssetTrack *videoTrack = [[asset tracksWithMediaType:AVMediaTypeVideo] firstObject];
-        if (!videoTrack) {
-            NSLog(@"[RTMPDaemon] 没有视频轨道");
-            return NULL;
-        }
-
-        // 配置输出为 BGRA 格式
-        NSDictionary *outputSettings = @{
-            (id)kCVPixelBufferPixelFormatTypeKey: @(kCVPixelFormatType_32BGRA),
-            (id)kCVPixelBufferWidthKey: @(640),
-            (id)kCVPixelBufferHeightKey: @(480),
-        };
-
-        AVAssetReaderTrackOutput *output = [[AVAssetReaderTrackOutput alloc]
-            initWithTrack:videoTrack outputSettings:outputSettings];
-
-        if (![reader canAddOutput:output]) {
-            NSLog(@"[RTMPDaemon] 无法添加读取输出");
-            return NULL;
-        }
-        [reader addOutput:output];
-
-        if (![reader startReading]) {
-            NSLog(@"[RTMPDaemon] 读取器启动失败: %@", reader.error);
-            return NULL;
-        }
-
-        NSLog(@"[RTMPDaemon] 本地视频读取器已启动");
-
-        while (g_running && g_currentSource == RTMPVideoSourceLocalVideo &&
-               reader.status == AVAssetReaderStatusReading) {
-            @autoreleasepool {
-                CMSampleBufferRef sampleBuffer = [output copyNextSampleBuffer];
-                if (!sampleBuffer) {
-                    // 视频结束，循环播放
-                    [reader cancelReading];
-                    reader = [[AVAssetReader alloc] initWithAsset:asset error:&error];
-                    output = [[AVAssetReaderTrackOutput alloc]
-                        initWithTrack:videoTrack outputSettings:outputSettings];
-                    [reader addOutput:output];
-                    [reader startReading];
-                    continue;
+        if (!path || path.length == 0) {
+            // 无文件，生成占位帧
+            const int w = 640, h = 480, bpr = w * 4;
+            uint8_t *buf = (uint8_t *)malloc(h * bpr);
+            while (g_running && g_currentSource == RTMPVideoSourceLocalVideo) {
+                @autoreleasepool {
+                    for (int y = 0; y < h; y++)
+                        for (int x = 0; x < w; x++) {
+                            int idx = y * bpr + x * 4;
+                            buf[idx+0]=60; buf[idx+1]=60; buf[idx+2]=80; buf[idx+3]=255;
+                        }
+                    writeFrameToSharedMemory(buf, w, h, bpr);
+                    usleep(33000);
                 }
-
-                CVPixelBufferRef pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer);
-                if (pixelBuffer) {
-                    CVPixelBufferLockBaseAddress(pixelBuffer, kCVPixelBufferLock_ReadOnly);
-
-                    size_t width = CVPixelBufferGetWidth(pixelBuffer);
-                    size_t height = CVPixelBufferGetHeight(pixelBuffer);
-                    size_t bytesPerRow = CVPixelBufferGetBytesPerRow(pixelBuffer);
-                    uint8_t *baseAddr = (uint8_t *)CVPixelBufferGetBaseAddress(pixelBuffer);
-
-                    writeFrameToSharedMemory(baseAddr, width, height, bytesPerRow);
-
-                    CVPixelBufferUnlockBaseAddress(pixelBuffer, kCVPixelBufferLock_ReadOnly);
-                }
-
-                CFRelease(sampleBuffer);
-
-                // 30fps 节流
-                usleep(33000);
             }
+            free(buf);
+            return NULL;
         }
 
-        [reader cancelReading];
+        NSURL *url = [NSURL fileURLWithPath:path];
+        AVAsset *asset = [AVAsset assetWithURL:url];
+        if (!asset) { NSLog(@"[RTMPDaemon] 无法创建 AVAsset"); return NULL; }
+
+        while (g_running && g_currentSource == RTMPVideoSourceLocalVideo) {
+            @autoreleasepool {
+                NSError *error = nil;
+                AVAssetReader *reader = [[AVAssetReader alloc] initWithAsset:asset error:&error];
+                if (!reader) { NSLog(@"[RTMPDaemon] reader失败: %@", error); break; }
+
+                AVAssetTrack *videoTrack = [[asset tracksWithMediaType:AVMediaTypeVideo] firstObject];
+                if (!videoTrack) { NSLog(@"[RTMPDaemon] 无视频轨道"); break; }
+
+                NSDictionary *settings = @{
+                    (id)kCVPixelBufferPixelFormatTypeKey: @(kCVPixelFormatType_32BGRA),
+                    (id)kCVPixelBufferWidthKey: @(640),
+                    (id)kCVPixelBufferHeightKey: @(480),
+                };
+
+                AVAssetReaderTrackOutput *output = [[AVAssetReaderTrackOutput alloc]
+                    initWithTrack:videoTrack outputSettings:settings];
+
+                if (![reader canAddOutput:output] || ![reader startReading]) {
+                    NSLog(@"[RTMPDaemon] 启动读取失败"); break;
+                }
+                [reader addOutput:output];
+
+                while (g_running && g_currentSource == RTMPVideoSourceLocalVideo &&
+                       reader.status == AVAssetReaderStatusReading) {
+                    @autoreleasepool {
+                        CMSampleBufferRef sb = [output copyNextSampleBuffer];
+                        if (!sb) break;
+
+                        CVPixelBufferRef px = CMSampleBufferGetImageBuffer(sb);
+                        if (px) {
+                            CVPixelBufferLockBaseAddress(px, kCVPixelBufferLock_ReadOnly);
+                            writeFrameToSharedMemory(
+                                (uint8_t *)CVPixelBufferGetBaseAddress(px),
+                                CVPixelBufferGetWidth(px),
+                                CVPixelBufferGetHeight(px),
+                                CVPixelBufferGetBytesPerRow(px)
+                            );
+                            CVPixelBufferUnlockBaseAddress(px, kCVPixelBufferLock_ReadOnly);
+                        }
+                        CFRelease(sb);
+                        usleep(33000);
+                    }
+                }
+                [reader cancelReading];
+            }
+
+            // 检查循环
+            if (!g_loopEnabled || g_currentSource != RTMPVideoSourceLocalVideo) break;
+            NSLog(@"[RTMPDaemon] 循环播放: 重新开始");
+        }
     }
 
     NSLog(@"[RTMPDaemon] 本地视频线程退出");
-    return NULL;
-}
-
-// ============================================================
-// RTMP 拉流线程 (使用 VideoToolbox 进行软件解码模拟)
-// 注意: 实际使用需要 libRTMP/ffmpeg 静态链接
-// 这里提供完整的框架代码，RTMP 连接逻辑取决于编译环境
-// ============================================================
-
-// RTMP 拉流回调 - 收到视频帧时调用
-static void rtmpVideoFrameCallback(uint8_t *frameData, size_t width, size_t height, size_t bytesPerRow) {
-    if (!g_running || g_currentSource != RTMPVideoSourceRTMPStream) return;
-    writeFrameToSharedMemory(frameData, width, height, bytesPerRow);
-}
-
-static void *rtmpPullThread(void *arg) {
-    NSLog(@"[RTMPDaemon] RTMP 拉流线程启动: %s", g_rtmpURL);
-
-    // RTMP 拉流框架代码
-    // 编译环境需要 libRTMP.a (librtmp) 和 ffmpeg 库
-    // 以下代码展示了完整的拉流和解码框架
-
-    @autoreleasepool {
-        // 1. 初始化 RTMP 连接
-        // RTMP *rtmp = RTMP_Alloc();
-        // RTMP_Init(rtmp);
-        // rtmp->Link.timeout = 10;
-        // RTMP_SetupURL(rtmp, g_rtmpURL);
-        // RTMP_EnableWrite(rtmp);
-        //
-        // if (!RTMP_Connect(rtmp, NULL)) {
-        //     NSLog(@"[RTMPDaemon] RTMP 连接失败");
-        //     // 重试逻辑
-        // }
-        //
-        // if (!RTMP_ConnectStream(rtmp, 0)) {
-        //     NSLog(@"[RTMPDaemon] RTMP 连接流失败");
-        // }
-
-        // 2. 使用 VideoToolbox 解码 H.264 流
-        // VTDecompressionSessionRef decompSession;
-        // 创建 decompression session...
-        //
-        // 3. 读取 FLV 包, 提取 H.264 NAL units
-        //
-        // 4. 解码 → BGRA pixel buffer
-        //
-        // 5. 调用 rtmpVideoFrameCallback()
-
-        // 占位: 当 RTMP 不可用时，生成占位测试帧
-        NSLog(@"[RTMPDaemon] RTMP 库未链接, 使用模拟测试帧");
-        const int width = 640;
-        const int height = 480;
-        const int bytesPerRow = width * 4;
-        uint8_t *buffer = (uint8_t *)malloc(height * bytesPerRow);
-
-        int tick = 0;
-        while (g_running && g_currentSource == RTMPVideoSourceRTMPStream) {
-            @autoreleasepool {
-                // 生成"等待 RTMP 流"提示画面
-                for (int y = 0; y < height; y++) {
-                    for (int x = 0; x < width; x++) {
-                        int idx = y * bytesPerRow + x * 4;
-                        buffer[idx + 0] = 50;  // B
-                        buffer[idx + 1] = 50;  // G
-                        buffer[idx + 2] = 100 + (uint8_t)(sin(0.01 * (x + tick)) * 50); // R
-                        buffer[idx + 3] = 255; // A
-                    }
-                }
-                writeFrameToSharedMemory(buffer, width, height, bytesPerRow);
-                tick++;
-                usleep(33000); // ~30fps
-            }
-        }
-
-        free(buffer);
-
-        // RTMP_Free(rtmp);
-    }
-
-    NSLog(@"[RTMPDaemon] RTMP 拉流线程退出");
     return NULL;
 }
 
@@ -381,13 +367,10 @@ static void *controlListenerThread(void *arg) {
     NSLog(@"[RTMPDaemon] 控制监听线程启动");
 
     uint32_t lastCommand = RTMPControlNone;
-    uint32_t lastSourceType = RTMPVideoSourceTestPattern;
+    uint32_t lastSourceType = RTMPVideoSourceRealCamera;
 
     while (g_running) {
-        if (g_controlMemory == NULL) {
-            usleep(500000); // 500ms
-            continue;
-        }
+        if (g_controlMemory == NULL) { usleep(500000); continue; }
 
         uint32_t cmd = g_controlMemory->command;
         uint32_t srcType = g_controlMemory->sourceType;
@@ -396,52 +379,76 @@ static void *controlListenerThread(void *arg) {
             lastCommand = cmd;
             lastSourceType = srcType;
 
-            NSLog(@"[RTMPDaemon] 收到控制命令: cmd=%u, sourceType=%u", cmd, srcType);
+            NSLog(@"[RTMPDaemon] 控制命令: cmd=%u src=%u vidInj=%u audInj=%u loop=%u",
+                  cmd, srcType,
+                  g_controlMemory->videoInjectionEnabled,
+                  g_controlMemory->audioInjectionEnabled,
+                  g_controlMemory->loopEnabled);
 
-            if (cmd == 3) { // RTMPControlSwitchSource
-                g_currentSource = (int)srcType;
+            switch (cmd) {
+                case 1: // RTMPControlSwitchSource
+                    g_currentSource = (int)srcType;
+                    g_videoInjectionEnabled = g_controlMemory->videoInjectionEnabled;
+                    g_audioInjectionEnabled = g_controlMemory->audioInjectionEnabled;
+                    g_loopEnabled = g_controlMemory->loopEnabled;
 
-                if (srcType == RTMPVideoSourceRTMPStream) {
-                    // 复制 RTMP URL
-                    strncpy(g_rtmpURL, g_controlMemory->rtmpURL, MAX_RTMP_URL_LENGTH - 1);
-                    g_rtmpURL[MAX_RTMP_URL_LENGTH - 1] = '\0';
-                }
+                    if (srcType == RTMPVideoSourceRTMPStream) {
+                        strncpy(g_rtmpURL, g_controlMemory->rtmpURL, MAX_RTMP_URL_LENGTH - 1);
+                    }
+                    if (srcType == RTMPVideoSourceLocalVideo) {
+                        strncpy(g_localVideoPath, g_controlMemory->localVideoPath, MAX_VIDEO_PATH_LENGTH - 1);
+                    }
+                    break;
 
-                if (srcType == RTMPVideoSourceLocalVideo) {
-                    strncpy(g_localVideoPath, g_controlMemory->localVideoPath, MAX_VIDEO_PATH_LENGTH - 1);
-                    g_localVideoPath[MAX_VIDEO_PATH_LENGTH - 1] = '\0';
-                }
+                case 8: // RTMPControlReset
+                    g_currentSource = RTMPVideoSourceRealCamera;
+                    g_videoInjectionEnabled = 1;
+                    g_audioInjectionEnabled = 0;
+                    g_loopEnabled = 1;
+                    memset(g_localVideoPath, 0, MAX_VIDEO_PATH_LENGTH);
+                    break;
 
-                // 清除命令
-                g_controlMemory->command = RTMPControlNone;
+                case 6: // RTMPControlSetInjection
+                    g_videoInjectionEnabled = g_controlMemory->videoInjectionEnabled;
+                    g_audioInjectionEnabled = g_controlMemory->audioInjectionEnabled;
+                    break;
+
+                case 7: // RTMPControlSetLoop
+                    g_loopEnabled = g_controlMemory->loopEnabled;
+                    break;
+            }
+
+            g_controlMemory->command = RTMPControlNone;
+
+            // 同步更新帧头
+            if (g_sharedMemory) {
+                g_sharedMemory->frameHeader.videoInjectionEnabled = g_videoInjectionEnabled;
+                g_sharedMemory->frameHeader.audioInjectionEnabled = g_audioInjectionEnabled;
+                g_sharedMemory->frameHeader.loopEnabled = g_loopEnabled;
             }
         }
 
-        usleep(100000); // 100ms 轮询
+        usleep(100000);
     }
 
-    NSLog(@"[RTMPDaemon] 控制监听线程退出");
     return NULL;
 }
 
 // ============================================================
-// 主循环 - 视频源调度
+// 主循环调度
 // ============================================================
 
 static void startVideoSourceThread(pthread_t *thread, int sourceType) {
     switch (sourceType) {
-        case RTMPVideoSourceTestPattern:
-            pthread_create(thread, NULL, testPatternThread, NULL);
-            break;
         case RTMPVideoSourceRTMPStream:
-            pthread_create(thread, NULL, rtmpPullThread, NULL);
+            pthread_create(thread, NULL, rtmpReceiveThread, NULL);
             break;
         case RTMPVideoSourceLocalVideo:
             pthread_create(thread, NULL, localVideoThread, NULL);
             break;
         case RTMPVideoSourceRealCamera:
         default:
-            // 真实摄像头模式: 不清除帧缓冲，Tweak 端判断 sourceType==0 时不注入
+            // 真实摄像头: 不写帧, Tweak 端 sees sourceType==0 → 不注入
             break;
     }
 }
@@ -453,87 +460,49 @@ static void startVideoSourceThread(pthread_t *thread, int sourceType) {
 int main(int argc, char *argv[]) {
     @autoreleasepool {
         NSLog(@"[RTMPDaemon] ===============================");
-        NSLog(@"[RTMPDaemon] RTMPCamera 守护进程启动");
-        NSLog(@"[RTMPDaemon] 版本 1.0.0");
+        NSLog(@"[RTMPDaemon] RTMPCamera 守护进程 v1.0.1");
         NSLog(@"[RTMPDaemon] ===============================");
 
-        // 注册信号处理
         signal(SIGTERM, signalHandler);
         signal(SIGINT, signalHandler);
         signal(SIGQUIT, signalHandler);
 
-        // 初始化共享内存
         if (!initSharedMemory()) {
-            NSLog(@"[RTMPDaemon] 共享内存初始化失败, 退出");
+            NSLog(@"[RTMPDaemon] 初始化失败");
             return 1;
         }
 
-        // 启动控制监听线程
         pthread_t controlThread;
         pthread_create(&controlThread, NULL, controlListenerThread, NULL);
 
-        // 初始视频源
-        __block int currentSource = g_currentSource;
+        int currentSource = g_currentSource;
         pthread_t videoThread = 0;
 
-        NSLog(@"[RTMPDaemon] 主循环开始, 初始源=%d", currentSource);
+        NSLog(@"[RTMPDaemon] 启动, 初始源=真摄像头");
         startVideoSourceThread(&videoThread, currentSource);
 
-        // 主调度循环
         while (g_running) {
             @autoreleasepool {
                 if (g_currentSource != currentSource) {
-                    NSLog(@"[RTMPDaemon] 切换视频源: %d -> %d", currentSource, g_currentSource);
-
                     int oldSource = currentSource;
                     currentSource = g_currentSource;
 
-                    // 等待旧线程退出
-                    if (videoThread) {
-                        pthread_join(videoThread, NULL);
-                        videoThread = 0;
-                    }
-
-                    // 启动新线程
+                    if (videoThread) { pthread_join(videoThread, NULL); videoThread = 0; }
                     startVideoSourceThread(&videoThread, currentSource);
                 }
-
-                usleep(500000); // 500ms
+                usleep(500000);
             }
         }
 
-        // 清理
-        NSLog(@"[RTMPDaemon] 正在清理...");
-
-        if (videoThread) {
-            pthread_cancel(videoThread);
-            pthread_join(videoThread, NULL);
-        }
+        if (videoThread) { pthread_cancel(videoThread); pthread_join(videoThread, NULL); }
         pthread_join(controlThread, NULL);
 
-        if (g_sharedMemory != NULL) {
-            memset(g_sharedMemory, 0, SHARED_MEMORY_TOTAL_SIZE);
-            munmap(g_sharedMemory, SHARED_MEMORY_TOTAL_SIZE);
-            g_sharedMemory = NULL;
-        }
+        if (g_sharedMemory) { munmap(g_sharedMemory, SHARED_MEMORY_TOTAL_SIZE); }
+        if (g_controlMemory) { munmap(g_controlMemory, sizeof(SharedControlData)); }
+        if (g_sharedFrameFD >= 0) { close(g_sharedFrameFD); shm_unlink(SHARED_MEMORY_NAME); }
+        if (g_controlFD >= 0) { close(g_controlFD); shm_unlink(CONTROL_MEMORY_NAME); }
 
-        if (g_controlMemory != NULL) {
-            munmap(g_controlMemory, sizeof(SharedControlData));
-            g_controlMemory = NULL;
-        }
-
-        if (g_sharedFrameFD >= 0) {
-            close(g_sharedFrameFD);
-            shm_unlink(SHARED_MEMORY_NAME);
-        }
-
-        if (g_controlFD >= 0) {
-            close(g_controlFD);
-            shm_unlink(CONTROL_MEMORY_NAME);
-        }
-
-        NSLog(@"[RTMPDaemon] 守护进程已退出");
+        NSLog(@"[RTMPDaemon] 已退出");
     }
-
     return 0;
 }

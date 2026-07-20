@@ -1,394 +1,587 @@
 ﻿import UIKit
 import AVFoundation
 import CoreMedia
+import UniformTypeIdentifiers
 
-// 视频源类型 (与 SharedFrame.h 保持一致)
+// 视频源类型 (与 SharedFrame.h 保持一致，移除测试帧)
 enum VideoSourceType: Int {
     case realCamera = 0
     case rtmpStream = 1
     case localVideo = 2
-    case testPattern = 3
 }
 
 // MARK: - 主视图控制器
 class MainViewController: UIViewController {
 
     // MARK: - UI 组件
-    private let titleLabel = UILabel()
-    private let statusLabel = UILabel()
+    private let scrollView = UIScrollView()
+    private let contentView = UIView()
+
+    // 状态卡片
+    private let statusCard = UIView()
     private let statusIndicator = UIView()
+    private let statusTitleLabel = UILabel()
+    private let statusLabel = UILabel()
 
-    // 视频源选择
-    private let sourceSegment = UISegmentedControl(items: [
-        "真实摄像头", "RTMP流", "本地视频", "测试帧"
-    ])
+    // 视频源选择 (三个按钮代替分段控件)
+    private let sourceCard = UIView()
+    private let sourceTitleLabel = UILabel()
+    let realCameraBtn = UIButton(type: .system)
+    let rtmpBtn = UIButton(type: .system)
+    let localVideoBtn = UIButton(type: .system)
+    private var sourceButtons: [UIButton] { [realCameraBtn, rtmpBtn, localVideoBtn] }
 
-    // RTMP 地址输入区域
-    private let rtmpContainer = UIView()
-    private let rtmpLabel = UILabel()
-    private let rtmpTextField = UITextField()
-    private let rtmpStatusLabel = UILabel()
+    // RTMP 配置卡片
+    private let rtmpCard = UIView()
+    private let rtmpTitleLabel = UILabel()
+    private let rtmpURLLabel = UILabel()
+    private let rtmpHintLabel = UILabel()
+    private let rtmpCopyButton = UIButton(type: .system)
 
-    // 本地视频区域
-    private let localVideoContainer = UIView()
-    private let localVideoLabel = UILabel()
+    // 本地视频卡片
+    private let localVideoCard = UIView()
+    private let loopLabel = UILabel()
+    private let loopSwitch = UISwitch()
+    private let localVideoTitleLabel = UILabel()
     private let localVideoPathLabel = UILabel()
     private let selectVideoButton = UIButton(type: .system)
 
-    // 测试帧区域
-    private let testPatternContainer = UIView()
-    private let testPatternLabel = UILabel()
-    private let testPatternSegment = UISegmentedControl(items: [
-        "纯红色", "纯绿色", "纯蓝色", "渐变"
-    ])
+    // 注入开关卡片
+    private let injectionCard = UIView()
+    private let injectionTitleLabel = UILabel()
+    private let videoInjectionLabel = UILabel()
+    private let videoInjectionSwitch = UISwitch()
+    private let audioInjectionLabel = UILabel()
+    private let audioInjectionSwitch = UISwitch()
 
-    // 控制按钮
+    // 悬浮窗 + 预览
+    private let floatBtn = UIButton(type: .system)
+    private let previewView = UIView()
+    private let previewHintLabel = UILabel()
+    private var previewLayer: AVCaptureVideoPreviewLayer?
+    private var captureSession: AVCaptureSession?
+
+    // 应用按钮
     private let applyButton = UIButton(type: .system)
-    private let previewContainer = UIView()
-    private let previewLabel = UILabel()
 
-    // 当前状态
+    // 状态
     private var currentSource: VideoSourceType = .realCamera
-    private var rtmpURL: String = "rtmp://192.168.1.100/live/stream"
+    private var rtmpURL: String = ""
     private var localVideoPath: String = ""
-    private var testPattern: Int = 0
-    private var isActive: Bool = false
+    private var videoInjectionOn: Bool = true
+    private var audioInjectionOn: Bool = false
+    private var loopEnabled: Bool = true
+    private var phoneIP: String = ""
 
-    // 共享内存操作
     private let sharedFrameQueue = DispatchQueue(label: "com.rtmpcamera.app.sharedframe")
+    private let defaultRTMPPort = 1935
 
     // MARK: - 生命周期
     override func viewDidLoad() {
         super.viewDidLoad()
+        detectLocalIP()
         setupUI()
         loadSavedConfig()
+        startCameraPreview()
+    }
+
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+    }
+
+    deinit {
+        captureSession?.stopRunning()
+    }
+
+    // MARK: - IP 检测
+    private func detectLocalIP() {
+        var addr = "192.168.1.100"
+        var ifaddr: UnsafeMutablePointer<ifaddrs>?
+        if getifaddrs(&ifaddr) == 0, let first = ifaddr {
+            var ptr = first
+            while ptr.pointee.ifa_next != nil {
+                let name = String(cString: ptr.pointee.ifa_name)
+                if name == "en0" || name == "pdp_ip0" {
+                    let sa = ptr.pointee.ifa_addr.pointee
+                    if sa.sa_family == UInt8(AF_INET) {
+                        var host = [CChar](repeating: 0, count: Int(NI_MAXHOST))
+                        if getnameinfo(ptr.pointee.ifa_addr, socklen_t(sa.sa_len),
+                                       &host, socklen_t(host.count),
+                                       nil, 0, NI_NUMERICHOST) == 0 {
+                            let ip = String(cString: host)
+                            if ip != "127.0.0.1" && ip.hasPrefix("192.") || ip.hasPrefix("10.") || ip.hasPrefix("172.") {
+                                addr = ip
+                                if name == "en0" { break }
+                            }
+                        }
+                    }
+                }
+                ptr = ptr.pointee.ifa_next
+            }
+            freeifaddrs(ifaddr)
+        }
+        phoneIP = addr
+        rtmpURL = "rtmp://\(addr):\(defaultRTMPPort)/live/stream"
     }
 
     // MARK: - UI 设置
     private func setupUI() {
-        view.backgroundColor = UIColor.systemGroupedBackground
+        view.backgroundColor = .systemGroupedBackground
         title = "虚拟摄像头"
-        navigationController?.navigationBar.prefersLargeTitles = true
+        navigationController?.navigationBar.prefersLargeTitles = false
 
-        let scrollView = UIScrollView(frame: view.bounds)
+        // 还原按钮
+        let resetBtn = UIBarButtonItem(title: "还原", style: .plain, target: self, action: #selector(resetAllSettings))
+        navigationItem.rightBarButtonItem = resetBtn
+
+        scrollView.frame = view.bounds
         scrollView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         scrollView.alwaysBounceVertical = true
         view.addSubview(scrollView)
 
-        let contentView = UIView()
+        contentView.frame = CGRect(x: 0, y: 0, width: view.bounds.width, height: 0)
         scrollView.addSubview(contentView)
-        contentView.translatesAutoresizingMaskIntoConstraints = false
 
-        var yOffset: CGFloat = 20
+        var y: CGFloat = 16
+        let w = view.bounds.width - 32
 
-        // ---- 状态指示器 ----
-        let statusCard = createCardView()
+        // ==== 1. 状态卡片 ====
+        setupCard(statusCard, at: &y, w: w, h: 68)
         contentView.addSubview(statusCard)
 
-        statusIndicator.frame = CGRect(x: 16, y: 16, width: 14, height: 14)
-        statusIndicator.layer.cornerRadius = 7
-        statusIndicator.backgroundColor = .systemGray
+        statusIndicator.frame = CGRect(x: 14, y: 14, width: 12, height: 12)
+        statusIndicator.layer.cornerRadius = 6
+        statusIndicator.backgroundColor = .systemGreen
         statusCard.addSubview(statusIndicator)
 
-        titleLabel.frame = CGRect(x: 38, y: 12, width: 200, height: 22)
-        titleLabel.text = "虚拟摄像头状态"
-        titleLabel.font = UIFont.boldSystemFont(ofSize: 17)
-        statusCard.addSubview(titleLabel)
+        statusTitleLabel.frame = CGRect(x: 34, y: 10, width: 200, height: 20)
+        statusTitleLabel.text = "虚拟摄像头状态"
+        statusTitleLabel.font = .boldSystemFont(ofSize: 15)
+        statusCard.addSubview(statusTitleLabel)
 
-        statusLabel.frame = CGRect(x: 16, y: 40, width: 300, height: 18)
+        statusLabel.frame = CGRect(x: 14, y: 36, width: w - 28, height: 18)
         statusLabel.text = "当前: 真实摄像头"
-        statusLabel.font = UIFont.systemFont(ofSize: 14)
+        statusLabel.font = .systemFont(ofSize: 13)
         statusLabel.textColor = .secondaryLabel
         statusCard.addSubview(statusLabel)
 
-        statusCard.frame = CGRect(x: 16, y: yOffset, width: view.bounds.width - 32, height: 70)
-        yOffset += 86
-
-        // ---- 视频源切换 ----
-        let sourceCard = createCardView()
+        // ==== 2. 视频源选择 ====
+        setupCard(sourceCard, at: &y, w: w, h: 110)
         contentView.addSubview(sourceCard)
 
-        let sourceTitle = UILabel(frame: CGRect(x: 16, y: 12, width: 260, height: 22))
-        sourceTitle.text = "视频源切换"
-        sourceTitle.font = UIFont.boldSystemFont(ofSize: 17)
-        sourceCard.addSubview(sourceTitle)
+        sourceTitleLabel.frame = CGRect(x: 14, y: 10, width: w - 28, height: 20)
+        sourceTitleLabel.text = "视频源选择"
+        sourceTitleLabel.font = .boldSystemFont(ofSize: 15)
+        sourceCard.addSubview(sourceTitleLabel)
 
-        sourceSegment.frame = CGRect(x: 12, y: 42, width: sourceCard.bounds.width - 24, height: 36)
-        sourceSegment.selectedSegmentIndex = 0
-        sourceSegment.addTarget(self, action: #selector(sourceChanged(_:)), for: .valueChanged)
-        sourceCard.addSubview(sourceSegment)
+        let btnW = (w - 48) / 3
+        let btns: [(UIButton, String, String, VideoSourceType)] = [
+            (realCameraBtn, "🎥", "真实摄像头", .realCamera),
+            (rtmpBtn, "📡", "RTMP推流", .rtmpStream),
+            (localVideoBtn, "📁", "本地视频", .localVideo),
+        ]
+        for (i, (btn, icon, title, _)) in btns.enumerated() {
+            let x = CGFloat(14 + Int(btnW + 10) * i)
+            btn.frame = CGRect(x: x, y: 38, width: btnW, height: 58)
+            btn.setTitle("\(icon)\n\(title)", for: .normal)
+            btn.titleLabel?.numberOfLines = 2
+            btn.titleLabel?.textAlignment = .center
+            btn.titleLabel?.font = .systemFont(ofSize: 12)
+            btn.backgroundColor = .systemGray6
+            btn.layer.cornerRadius = 10
+            btn.addTarget(self, action: #selector(sourceBtnTapped(_:)), for: .touchUpInside)
+            sourceCard.addSubview(btn)
+        }
 
-        sourceCard.frame = CGRect(x: 16, y: yOffset, width: view.bounds.width - 32, height: 90)
-        yOffset += 106
-
-        // ---- RTMP 配置 ----
-        let rtmpCard = createCardView()
+        // ==== 3. RTMP 卡片 ====
+        setupCard(rtmpCard, at: &y, w: w, h: 115)
         contentView.addSubview(rtmpCard)
-        setupRTMPSection(in: rtmpCard)
-        rtmpCard.frame = CGRect(x: 16, y: yOffset, width: view.bounds.width - 32, height: 110)
-        yOffset += 126
 
-        // ---- 本地视频 ----
-        let localCard = createCardView()
-        contentView.addSubview(localCard)
-        setupLocalVideoSection(in: localCard)
-        localCard.frame = CGRect(x: 16, y: yOffset, width: view.bounds.width - 32, height: 100)
-        localCard.isHidden = true
-        yOffset += 116
+        rtmpTitleLabel.frame = CGRect(x: 14, y: 10, width: w - 28, height: 20)
+        rtmpTitleLabel.text = "📡 RTMP 推流接收"
+        rtmpTitleLabel.font = .boldSystemFont(ofSize: 15)
+        rtmpCard.addSubview(rtmpTitleLabel)
 
-        // ---- 测试帧 ----
-        let testCard = createCardView()
-        contentView.addSubview(testCard)
-        setupTestPatternSection(in: testCard)
-        testCard.frame = CGRect(x: 16, y: yOffset, width: view.bounds.width - 32, height: 90)
-        testCard.isHidden = true
-        yOffset += 106
+        rtmpURLLabel.frame = CGRect(x: 14, y: 36, width: w - 80, height: 22)
+        rtmpURLLabel.text = rtmpURL
+        rtmpURLLabel.font = .monospacedSystemFont(ofSize: 13, weight: .regular)
+        rtmpURLLabel.textColor = .systemBlue
+        rtmpURLLabel.adjustsFontSizeToFitWidth = true
+        rtmpCard.addSubview(rtmpURLLabel)
 
-        // ---- 应用按钮 ----
-        applyButton.frame = CGRect(x: 16, y: yOffset, width: view.bounds.width - 32, height: 48)
-        applyButton.setTitle("应用设置", for: .normal)
-        applyButton.backgroundColor = .systemBlue
-        applyButton.setTitleColor(.white, for: .normal)
-        applyButton.layer.cornerRadius = 12
-        applyButton.titleLabel?.font = UIFont.boldSystemFont(ofSize: 17)
-        applyButton.addTarget(self, action: #selector(applySettings), for: .touchUpInside)
-        contentView.addSubview(applyButton)
-        yOffset += 64
+        rtmpCopyButton.frame = CGRect(x: w - 62, y: 33, width: 52, height: 28)
+        rtmpCopyButton.setTitle("复制", for: .normal)
+        rtmpCopyButton.backgroundColor = .systemBlue
+        rtmpCopyButton.setTitleColor(.white, for: .normal)
+        rtmpCopyButton.layer.cornerRadius = 8
+        rtmpCopyButton.titleLabel?.font = .systemFont(ofSize: 13)
+        rtmpCopyButton.addTarget(self, action: #selector(copyRTMPURL), for: .touchUpInside)
+        rtmpCard.addSubview(rtmpCopyButton)
 
-        // ---- 预览提示 ----
-        let previewCard = createCardView()
-        contentView.addSubview(previewCard)
-        previewLabel.frame = CGRect(x: 16, y: 12, width: previewCard.bounds.width - 32, height: 40)
-        previewLabel.text = "设置已应用后，打开微信/视频号等App\n即可看到虚拟摄像头画面"
-        previewLabel.numberOfLines = 2
-        previewLabel.font = UIFont.systemFont(ofSize: 13)
-        previewLabel.textColor = .secondaryLabel
-        previewCard.addSubview(previewLabel)
-        previewCard.frame = CGRect(x: 16, y: yOffset, width: view.bounds.width - 32, height: 60)
-        yOffset += 80
+        rtmpHintLabel.frame = CGRect(x: 14, y: 66, width: w - 28, height: 36)
+        rtmpHintLabel.text = "将此地址填入 OBS「推流」→「服务」→「自定义」\n手机端会自动接收并显示画面"
+        rtmpHintLabel.font = .systemFont(ofSize: 11)
+        rtmpHintLabel.textColor = .secondaryLabel
+        rtmpHintLabel.numberOfLines = 2
+        rtmpCard.addSubview(rtmpHintLabel)
 
-        contentView.frame = CGRect(x: 0, y: 0, width: view.bounds.width, height: yOffset)
-        scrollView.contentSize = contentView.frame.size
+        // ==== 4. 本地视频卡片 ====
+        setupCard(localVideoCard, at: &y, w: w, h: 135)
+        contentView.addSubview(localVideoCard)
 
-        // 保存引用用于显隐
-        contentView.accessibilityElements = [rtmpCard, localCard, testCard]
-        rtmpContainer.tag = 100
-        localVideoContainer.tag = 101
-        testPatternContainer.tag = 102
+        loopLabel.frame = CGRect(x: 14, y: 10, width: 100, height: 22)
+        loopLabel.text = "循环播放"
+        loopLabel.font = .boldSystemFont(ofSize: 15)
+        localVideoCard.addSubview(loopLabel)
 
-        // 初始状态
-        updateVisibleSections()
-    }
+        loopSwitch.frame = CGRect(x: w - 65, y: 8, width: 51, height: 31)
+        loopSwitch.isOn = loopEnabled
+        loopSwitch.addTarget(self, action: #selector(loopToggled), for: .valueChanged)
+        localVideoCard.addSubview(loopSwitch)
 
-    private func setupRTMPSection(in card: UIView) {
-        rtmpLabel.frame = CGRect(x: 16, y: 12, width: 260, height: 22)
-        rtmpLabel.text = "RTMP 推流地址"
-        rtmpLabel.font = UIFont.boldSystemFont(ofSize: 15)
-        card.addSubview(rtmpLabel)
+        let sep1 = UIView(frame: CGRect(x: 14, y: 40, width: w - 28, height: 1))
+        sep1.backgroundColor = .separator
+        localVideoCard.addSubview(sep1)
 
-        rtmpTextField.frame = CGRect(x: 16, y: 40, width: card.bounds.width - 32, height: 38)
-        rtmpTextField.borderStyle = .roundedRect
-        rtmpTextField.placeholder = "rtmp://192.168.1.100/live/stream"
-        rtmpTextField.text = rtmpURL
-        rtmpTextField.autocapitalizationType = .none
-        rtmpTextField.autocorrectionType = .no
-        rtmpTextField.keyboardType = .URL
-        rtmpTextField.font = UIFont.monospacedSystemFont(ofSize: 13, weight: .regular)
-        card.addSubview(rtmpTextField)
+        localVideoTitleLabel.frame = CGRect(x: 14, y: 48, width: 100, height: 20)
+        localVideoTitleLabel.text = "选择视频"
+        localVideoTitleLabel.font = .boldSystemFont(ofSize: 15)
+        localVideoCard.addSubview(localVideoTitleLabel)
 
-        rtmpStatusLabel.frame = CGRect(x: 16, y: 82, width: card.bounds.width - 32, height: 16)
-        rtmpStatusLabel.text = "请输入 OBS 推流地址"
-        rtmpStatusLabel.font = UIFont.systemFont(ofSize: 12)
-        rtmpStatusLabel.textColor = .secondaryLabel
-        card.addSubview(rtmpStatusLabel)
-    }
-
-    private func setupLocalVideoSection(in card: UIView) {
-        localVideoLabel.frame = CGRect(x: 16, y: 12, width: 260, height: 22)
-        localVideoLabel.text = "本地视频文件"
-        localVideoLabel.font = UIFont.boldSystemFont(ofSize: 15)
-        card.addSubview(localVideoLabel)
-
-        localVideoPathLabel.frame = CGRect(x: 16, y: 40, width: card.bounds.width - 120, height: 18)
-        localVideoPathLabel.text = "未选择文件"
-        localVideoPathLabel.font = UIFont.systemFont(ofSize: 13)
-        localVideoPathLabel.textColor = .secondaryLabel
-        card.addSubview(localVideoPathLabel)
-
-        selectVideoButton.frame = CGRect(
-            x: card.bounds.width - 110, y: 36,
-            width: 94, height: 32
-        )
-        selectVideoButton.setTitle("选择文件", for: .normal)
+        selectVideoButton.frame = CGRect(x: w - 110, y: 44, width: 96, height: 32)
+        selectVideoButton.setTitle("选择 MP4", for: .normal)
         selectVideoButton.backgroundColor = .systemIndigo
         selectVideoButton.setTitleColor(.white, for: .normal)
         selectVideoButton.layer.cornerRadius = 8
-        selectVideoButton.titleLabel?.font = UIFont.systemFont(ofSize: 14)
+        selectVideoButton.titleLabel?.font = .systemFont(ofSize: 13)
         selectVideoButton.addTarget(self, action: #selector(selectLocalVideo), for: .touchUpInside)
-        card.addSubview(selectVideoButton)
+        localVideoCard.addSubview(selectVideoButton)
+
+        localVideoPathLabel.frame = CGRect(x: 14, y: 82, width: w - 28, height: 36)
+        localVideoPathLabel.text = "未选择文件（仅支持 MP4 格式）"
+        localVideoPathLabel.font = .systemFont(ofSize: 12)
+        localVideoPathLabel.textColor = .secondaryLabel
+        localVideoPathLabel.numberOfLines = 2
+        localVideoCard.addSubview(localVideoPathLabel)
+
+        // ==== 5. 注入开关卡片 ====
+        setupCard(injectionCard, at: &y, w: w, h: 80)
+        contentView.addSubview(injectionCard)
+
+        injectionTitleLabel.frame = CGRect(x: 14, y: 10, width: 200, height: 20)
+        injectionTitleLabel.text = "注入控制"
+        injectionTitleLabel.font = .boldSystemFont(ofSize: 15)
+        injectionCard.addSubview(injectionTitleLabel)
+
+        videoInjectionLabel.frame = CGRect(x: 14, y: 42, width: 80, height: 24)
+        videoInjectionLabel.text = "注入视频"
+        videoInjectionLabel.font = .systemFont(ofSize: 14)
+        injectionCard.addSubview(videoInjectionLabel)
+
+        videoInjectionSwitch.frame = CGRect(x: w - 65, y: 39, width: 51, height: 31)
+        videoInjectionSwitch.isOn = videoInjectionOn
+        videoInjectionSwitch.addTarget(self, action: #selector(injectionToggled), for: .valueChanged)
+        injectionCard.addSubview(videoInjectionSwitch)
+
+        audioInjectionLabel.frame = CGRect(x: 140, y: 42, width: 80, height: 24)
+        audioInjectionLabel.text = "注入音频"
+        audioInjectionLabel.font = .systemFont(ofSize: 14)
+        injectionCard.addSubview(audioInjectionLabel)
+
+        audioInjectionSwitch.frame = CGRect(x: w - 170, y: 39, width: 51, height: 31)
+        audioInjectionSwitch.isOn = audioInjectionOn
+        audioInjectionSwitch.addTarget(self, action: #selector(injectionToggled), for: .valueChanged)
+        injectionCard.addSubview(audioInjectionSwitch)
+
+        // ==== 6. 预览区域 ====
+        setupCard(previewView, at: &y, w: w, h: 180)
+        previewView.clipsToBounds = true
+        previewView.backgroundColor = .black
+        contentView.addSubview(previewView)
+
+        previewHintLabel.frame = CGRect(x: 10, y: previewView.bounds.height - 22, width: w - 20, height: 16)
+        previewHintLabel.text = "预览画面"
+        previewHintLabel.font = .systemFont(ofSize: 10)
+        previewHintLabel.textColor = .white.withAlphaComponent(0.6)
+        previewHintLabel.autoresizingMask = [.flexibleTopMargin, .flexibleWidth]
+        previewView.addSubview(previewHintLabel)
+
+        // ==== 7. 悬浮窗 + 应用按钮 ====
+        y += 8
+        floatBtn.frame = CGRect(x: 14, y: y, width: (w - 24) / 2, height: 44)
+        floatBtn.setTitle("⚪ 显示悬浮窗", for: .normal)
+        floatBtn.backgroundColor = .systemGray
+        floatBtn.setTitleColor(.white, for: .normal)
+        floatBtn.layer.cornerRadius = 10
+        floatBtn.titleLabel?.font = .boldSystemFont(ofSize: 14)
+        floatBtn.addTarget(self, action: #selector(toggleFloatingWindow), for: .touchUpInside)
+        contentView.addSubview(floatBtn)
+
+        applyButton.frame = CGRect(x: (w - 24) / 2 + 22, y: y, width: (w - 24) / 2, height: 44)
+        applyButton.setTitle("应用设置", for: .normal)
+        applyButton.backgroundColor = .systemBlue
+        applyButton.setTitleColor(.white, for: .normal)
+        applyButton.layer.cornerRadius = 10
+        applyButton.titleLabel?.font = .boldSystemFont(ofSize: 14)
+        applyButton.addTarget(self, action: #selector(applySettings), for: .touchUpInside)
+        contentView.addSubview(applyButton)
+
+        y += 60
+
+        contentView.frame.size.height = y
+        scrollView.contentSize = contentView.frame.size
+
+        updateCardVisibility()
+        updateSourceButtons()
     }
 
-    private func setupTestPatternSection(in card: UIView) {
-        testPatternLabel.frame = CGRect(x: 16, y: 12, width: 260, height: 22)
-        testPatternLabel.text = "测试帧颜色"
-        testPatternLabel.font = UIFont.boldSystemFont(ofSize: 15)
-        card.addSubview(testPatternLabel)
-
-        testPatternSegment.frame = CGRect(x: 12, y: 42, width: card.bounds.width - 24, height: 36)
-        testPatternSegment.selectedSegmentIndex = 0
-        card.addSubview(testPatternSegment)
-    }
-
-    private func createCardView() -> UIView {
-        let card = UIView()
+    private func setupCard(_ card: UIView, at y: inout CGFloat, w: CGFloat, h: CGFloat) {
+        card.frame = CGRect(x: 16, y: y, width: w, height: h)
         card.backgroundColor = .systemBackground
-        card.layer.cornerRadius = 14
+        card.layer.cornerRadius = 12
         card.layer.shadowColor = UIColor.black.cgColor
-        card.layer.shadowOpacity = 0.06
-        card.layer.shadowOffset = CGSize(width: 0, height: 2)
-        card.layer.shadowRadius = 8
-        return card
+        card.layer.shadowOpacity = 0.05
+        card.layer.shadowOffset = CGSize(width: 0, height: 1)
+        card.layer.shadowRadius = 6
+        y += h + 12
+    }
+
+    // MARK: - 预览
+    private func startCameraPreview() {
+        captureSession = AVCaptureSession()
+        captureSession?.sessionPreset = .medium
+
+        guard let device = AVCaptureDevice.default(for: .video),
+              let input = try? AVCaptureDeviceInput(device: device),
+              let session = captureSession,
+              session.canAddInput(input) else { return }
+
+        session.addInput(input)
+
+        let layer = AVCaptureVideoPreviewLayer(session: session)
+        layer.videoGravity = .resizeAspectFill
+        layer.frame = previewView.bounds
+        layer.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        previewView.layer.insertSublayer(layer, at: 0)
+        previewLayer = layer
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            session.startRunning()
+        }
+    }
+
+    // MARK: - 卡片显隐
+    private func updateCardVisibility() {
+        rtmpCard.isHidden = (currentSource != .rtmpStream)
+        localVideoCard.isHidden = (currentSource != .localVideo)
+    }
+
+    private func updateSourceButtons() {
+        for btn in sourceButtons {
+            btn.backgroundColor = .systemGray6
+            btn.setTitleColor(.label, for: .normal)
+        }
+        switch currentSource {
+        case .realCamera:
+            realCameraBtn.backgroundColor = .systemBlue
+            realCameraBtn.setTitleColor(.white, for: .normal)
+        case .rtmpStream:
+            rtmpBtn.backgroundColor = .systemBlue
+            rtmpBtn.setTitleColor(.white, for: .normal)
+        case .localVideo:
+            localVideoBtn.backgroundColor = .systemBlue
+            localVideoBtn.setTitleColor(.white, for: .normal)
+        }
     }
 
     // MARK: - 交互
 
-    @objc private func sourceChanged(_ sender: UISegmentedControl) {
-        currentSource = VideoSourceType(rawValue: sender.selectedSegmentIndex) ?? .realCamera
-        updateVisibleSections()
+    @objc private func sourceBtnTapped(_ sender: UIButton) {
+        if sender == realCameraBtn { currentSource = .realCamera }
+        else if sender == rtmpBtn { currentSource = .rtmpStream }
+        else if sender == localVideoBtn { currentSource = .localVideo }
+        updateCardVisibility()
+        updateSourceButtons()
     }
 
-    private func updateVisibleSections() {
-        guard let cards = view.subviews.first?.subviews.first?.accessibilityElements as? [UIView] else { return }
+    @objc private func resetAllSettings() {
+        let alert = UIAlertController(title: "还原所有设置", message: "将恢复到系统默认配置", preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "取消", style: .cancel))
+        alert.addAction(UIAlertAction(title: "确定还原", style: .destructive) { [weak self] _ in
+            guard let self = self else { return }
+            self.currentSource = .realCamera
+            self.localVideoPath = ""
+            self.videoInjectionOn = true
+            self.audioInjectionOn = false
+            self.loopEnabled = true
 
-        for card in cards {
-            if card.tag == 100 { card.isHidden = (currentSource != .rtmpStream) }
-            if card.tag == 101 { card.isHidden = (currentSource != .localVideo) }
-            if card.tag == 102 { card.isHidden = (currentSource != .testPattern) }
-        }
+            self.videoInjectionSwitch.isOn = true
+            self.audioInjectionSwitch.isOn = false
+            self.loopSwitch.isOn = true
+            self.localVideoPathLabel.text = "未选择文件（仅支持 MP4 格式）"
+            self.localVideoPathLabel.textColor = .secondaryLabel
+            self.statusLabel.text = "当前: 真实摄像头"
+            self.statusIndicator.backgroundColor = .systemGreen
+
+            self.updateCardVisibility()
+            self.updateSourceButtons()
+
+            // 清除持久化
+            ["videoSource", "rtmpURL", "localVideoPath", "videoInjection", "audioInjection", "loopEnabled"].forEach {
+                UserDefaults.standard.removeObject(forKey: $0)
+            }
+            UserDefaults.standard.synchronize()
+
+            self.sendControlCommand()
+        })
+        present(alert, animated: true)
+    }
+
+    @objc private func copyRTMPURL() {
+        UIPasteboard.general.string = rtmpURL
+        let alert = UIAlertController(title: "已复制", message: "RTMP 地址已复制到剪贴板，\n请粘贴到 OBS 推流设置中", preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "确定", style: .default))
+        present(alert, animated: true)
     }
 
     @objc private func selectLocalVideo() {
-        let picker = UIDocumentPickerViewController(forOpeningContentTypes: [
-            .movie, .mpeg4Movie, .quickTimeMovie
-        ])
+        // 只选择 MP4 格式
+        let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.mpeg4Movie])
         picker.delegate = self
         picker.allowsMultipleSelection = false
         present(picker, animated: true)
     }
 
-    @objc private func applySettings() {
-        let newURL = rtmpTextField.text ?? ""
-        let patternIndex = testPatternSegment.selectedSegmentIndex
+    @objc private func loopToggled() {
+        loopEnabled = loopSwitch.isOn
+        UserDefaults.standard.set(loopEnabled, forKey: "loopEnabled")
+    }
 
-        // 更新状态
+    @objc private func injectionToggled() {
+        videoInjectionOn = videoInjectionSwitch.isOn
+        audioInjectionOn = audioInjectionSwitch.isOn
+        UserDefaults.standard.set(videoInjectionOn, forKey: "videoInjection")
+        UserDefaults.standard.set(audioInjectionOn, forKey: "audioInjection")
+        sendControlCommand()
+    }
+
+    @objc private func toggleFloatingWindow() {
+        if FloatingWindowManager.shared.isShowing {
+            FloatingWindowManager.shared.hide()
+            floatBtn.setTitle("⚪ 显示悬浮窗", for: .normal)
+            floatBtn.backgroundColor = .systemGray
+        } else {
+            FloatingWindowManager.shared.show(with: self)
+            floatBtn.setTitle("🔵 隐藏悬浮窗", for: .normal)
+            floatBtn.backgroundColor = .systemGreen
+        }
+    }
+
+    @objc private func applySettings() {
         switch currentSource {
         case .realCamera:
             statusLabel.text = "当前: 真实摄像头"
             statusIndicator.backgroundColor = .systemGreen
         case .rtmpStream:
-            statusLabel.text = "当前: RTMP流 - \(newURL)"
+            statusLabel.text = "当前: RTMP流 - 接收中"
             statusIndicator.backgroundColor = .systemBlue
         case .localVideo:
-            statusLabel.text = "当前: 本地视频 - \(localVideoPath.isEmpty ? "未选择" : (localVideoPath as NSString).lastPathComponent)"
+            let name = localVideoPath.isEmpty ? "未选择" : (localVideoPath as NSString).lastPathComponent
+            statusLabel.text = "当前: 本地视频 - \(name)"
             statusIndicator.backgroundColor = .systemOrange
-        case .testPattern:
-            statusLabel.text = "当前: 测试帧 - 模式\(patternIndex + 1)"
-            statusIndicator.backgroundColor = .systemPurple
         }
 
-        // 通过共享内存发送控制命令到 Daemon
         sendControlCommand()
 
-        // 保存设置
         UserDefaults.standard.set(currentSource.rawValue, forKey: "videoSource")
-        UserDefaults.standard.set(newURL, forKey: "rtmpURL")
-        UserDefaults.standard.set(patternIndex, forKey: "testPattern")
+        UserDefaults.standard.set(rtmpURL, forKey: "rtmpURL")
+        UserDefaults.standard.set(localVideoPath, forKey: "localVideoPath")
+        UserDefaults.standard.set(videoInjectionOn, forKey: "videoInjection")
+        UserDefaults.standard.set(audioInjectionOn, forKey: "audioInjection")
+        UserDefaults.standard.set(loopEnabled, forKey: "loopEnabled")
         UserDefaults.standard.synchronize()
 
-        // 提示
-        let alert = UIAlertController(
-            title: "设置已应用",
-            message: "视频源已切换，请打开目标 App 查看效果",
-            preferredStyle: .alert
-        )
+        let alert = UIAlertController(title: "设置已应用", message: "打开微信/视频号等 App 即可看到效果", preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: "确定", style: .default))
         present(alert, animated: true)
     }
 
     // MARK: - 共享内存控制
-
     private func sendControlCommand() {
         sharedFrameQueue.async { [weak self] in
             guard let self = self else { return }
 
-            let controlFD = open("/tmp/rtmpcamera_control", O_RDWR)
+            let controlFD = shm_open(CONTROL_MEMORY_NAME, O_RDWR, 0)
             guard controlFD >= 0 else {
-                DispatchQueue.main.async {
-                    self.rtmpStatusLabel.text = "无法连接守护进程 (共享内存未创建)"
-                    self.rtmpStatusLabel.textColor = .systemRed
-                }
+                DispatchQueue.main.async { print("控制内存未创建") }
                 return
             }
             defer { close(controlFD) }
 
-            // 映射控制内存
-            let ptr = mmap(nil, 2048, PROT_READ | PROT_WRITE, MAP_SHARED, controlFD, 0)
+            let size = MemoryLayout<SharedControlData>.size
+            let ptr = mmap(nil, size, PROT_READ | PROT_WRITE, MAP_SHARED, controlFD, 0)
             guard ptr != MAP_FAILED else {
-                DispatchQueue.main.async {
-                    self.rtmpStatusLabel.text = "映射控制内存失败"
-                    self.rtmpStatusLabel.textColor = .systemRed
-                }
+                DispatchQueue.main.async { print("映射失败") }
                 return
             }
-            defer { munmap(ptr, 2048) }
+            defer { munmap(ptr, size) }
 
-            let control = ptr.bindMemory(to: Int32.self, capacity: 512)
+            let ctrl = ptr.bindMemory(to: SharedControlData.self, capacity: 1)
 
-            // 写入命令: [command, sourceType, ...]
-            control[0] = 3 // RTMPControlSwitchSource = 3
-            control[1] = Int32(self.currentSource.rawValue)
+            ctrl.pointee.command = 1 // RTMPControlSwitchSource
+            ctrl.pointee.sourceType = UInt32(self.currentSource.rawValue)
+            ctrl.pointee.videoInjectionEnabled = self.videoInjectionOn ? 1 : 0
+            ctrl.pointee.audioInjectionEnabled = self.audioInjectionOn ? 1 : 0
+            ctrl.pointee.loopEnabled = self.loopEnabled ? 1 : 0
 
-            if self.currentSource == .rtmpStream {
-                // 写入 RTMP URL
-                let url = self.rtmpTextField.text ?? ""
-                let urlData = url.utf8CString
-                let dest = ptr.advanced(by: 8).bindMemory(to: CChar.self, capacity: 512)
-                _ = urlData.withUnsafeBytes { src in
-                    memcpy(dest, src.baseAddress!, min(src.count, 511))
+            // RTMP URL
+            let url = self.rtmpURL.utf8CString
+            withUnsafeMutablePointer(to: &ctrl.pointee.rtmpURL) { dest in
+                _ = url.withUnsafeBytes { src in
+                    memcpy(dest, src.baseAddress!, min(src.count, MAX_RTMP_URL_LENGTH - 1))
                 }
-                dest[min(urlData.count, 511)] = 0
+                dest[min(url.count, MAX_RTMP_URL_LENGTH - 1)] = 0
             }
 
-            if self.currentSource == .localVideo {
-                let path = self.localVideoPath.utf8CString
-                let dest = ptr.advanced(by: 8 + 512).bindMemory(to: CChar.self, capacity: 1024)
-                _ = path.withUnsafeBytes { src in
-                    memcpy(dest, src.baseAddress!, min(src.count, 1023))
-                }
-                dest[min(path.count, 1023)] = 0
+            // 本地视频路径
+            let path = self.localVideoPath.utf8CString
+            let pathDest = ptr.advanced(by: MemoryLayout<SharedControlData>.offset(of: \SharedControlData.localVideoPath)!)
+                .bindMemory(to: CChar.self, capacity: MAX_VIDEO_PATH_LENGTH)
+            _ = path.withUnsafeBytes { src in
+                memcpy(pathDest, src.baseAddress!, min(src.count, MAX_VIDEO_PATH_LENGTH - 1))
             }
-
-            DispatchQueue.main.async {
-                self.rtmpStatusLabel.text = "控制命令已发送"
-                self.rtmpStatusLabel.textColor = .systemGreen
-            }
+            pathDest[min(path.count, MAX_VIDEO_PATH_LENGTH - 1)] = 0
         }
     }
 
     // MARK: - 配置持久化
-
     private func loadSavedConfig() {
         let savedSource = UserDefaults.standard.integer(forKey: "videoSource")
-        if savedSource >= 0 && savedSource <= 3 {
+        if savedSource >= 0 && savedSource <= 2 {
             currentSource = VideoSourceType(rawValue: savedSource) ?? .realCamera
-            sourceSegment.selectedSegmentIndex = savedSource
         }
-        if let url = UserDefaults.standard.string(forKey: "rtmpURL") {
+        if let url = UserDefaults.standard.string(forKey: "rtmpURL"), !url.isEmpty {
             rtmpURL = url
-            rtmpTextField.text = url
         }
-        testPatternSegment.selectedSegmentIndex = UserDefaults.standard.integer(forKey: "testPattern")
-        updateVisibleSections()
+        if let path = UserDefaults.standard.string(forKey: "localVideoPath") {
+            localVideoPath = path
+            localVideoPathLabel.text = (path as NSString).lastPathComponent
+            localVideoPathLabel.textColor = .label
+        }
+        videoInjectionOn = UserDefaults.standard.bool(forKey: "videoInjection")
+        audioInjectionOn = UserDefaults.standard.bool(forKey: "audioInjection")
+        loopEnabled = UserDefaults.standard.object(forKey: "loopEnabled") as? Bool ?? true
+
+        // 首次: videoInjection 默认 true
+        if UserDefaults.standard.object(forKey: "videoInjection") == nil {
+            videoInjectionOn = true
+        }
+
+        videoInjectionSwitch.isOn = videoInjectionOn
+        audioInjectionSwitch.isOn = audioInjectionOn
+        loopSwitch.isOn = loopEnabled
+        updateCardVisibility()
+        updateSourceButtons()
     }
 }
 
@@ -396,13 +589,95 @@ class MainViewController: UIViewController {
 extension MainViewController: UIDocumentPickerDelegate {
     func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
         guard let url = urls.first else { return }
-
-        // 获取安全范围访问
         let accessed = url.startAccessingSecurityScopedResource()
         defer { if accessed { url.stopAccessingSecurityScopedResource() } }
-
         localVideoPath = url.path
-        localVideoPathLabel.text = (url.path as NSString).lastPathComponent
+        localVideoPathLabel.text = "✅ \((url.path as NSString).lastPathComponent)"
         localVideoPathLabel.textColor = .label
     }
 }
+
+// MARK: - 悬浮窗管理器
+class FloatingWindowManager: NSObject {
+    static let shared = FloatingWindowManager()
+    private var floatWindow: UIWindow?
+    private var isShowing = false
+    private weak var parentVC: MainViewController?
+
+    override private init() { super.init() }
+
+    var isShowingWindow: Bool { isShowing }
+
+    func show(with vc: MainViewController) {
+        guard !isShowing else { return }
+        parentVC = vc
+        isShowing = true
+
+        let size: CGFloat = 80
+        let scene = UIApplication.shared.connectedScenes.compactMap({ let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene
+        floatWindow = UIWindow(windowScene: scene ?? UIWindowScene()) as? UIWindowScene }).first
+        if let sc = scene {
+            floatWindow = UIWindow(windowScene: sc)
+        } else {
+            floatWindow = UIWindow(frame: UIScreen.main.bounds)
+        }
+        floatWindow?.frame = CGRect(x: UIScreen.main.bounds.width - size - 16, y: 200, width: size, height: size)
+        floatWindow?.backgroundColor = UIColor.systemBlue.withAlphaComponent(0.85)
+        floatWindow?.layer.cornerRadius = size / 2
+        floatWindow?.layer.shadowColor = UIColor.black.cgColor
+        floatWindow?.layer.shadowOpacity = 0.3
+        floatWindow?.layer.shadowOffset = CGSize(width: 0, height: 2)
+        floatWindow?.layer.shadowRadius = 8
+        floatWindow?.windowLevel = .alert + 1
+
+        let btn = UIButton(frame: floatWindow!.bounds)
+        btn.setTitle("📷", for: .normal)
+        btn.titleLabel?.font = .systemFont(ofSize: 32)
+        btn.addTarget(self, action: #selector(floatTapped), for: .touchUpInside)
+        floatWindow?.addSubview(btn)
+
+        // 拖拽手势
+        let pan = UIPanGestureRecognizer(target: self, action: #selector(floatPanned(_:)))
+        floatWindow?.addGestureRecognizer(pan)
+
+        floatWindow?.isHidden = false
+    }
+
+    func hide() {
+        floatWindow?.isHidden = true
+        floatWindow = nil
+        isShowing = false
+    }
+
+    @objc private func floatTapped() {
+        guard let vc = parentVC else { return }
+        let alert = UIAlertController(title: "快速切换", message: nil, preferredStyle: .actionSheet)
+        alert.addAction(UIAlertAction(title: "真实摄像头", style: .default) { _ in
+            vc.realCameraBtn.sendActions(for: .touchUpInside)
+            vc.applySettings()
+        })
+        alert.addAction(UIAlertAction(title: "RTMP推流", style: .default) { _ in
+            vc.rtmpBtn.sendActions(for: .touchUpInside)
+            vc.applySettings()
+        })
+        alert.addAction(UIAlertAction(title: "本地视频", style: .default) { _ in
+            vc.localVideoBtn.sendActions(for: .touchUpInside)
+            vc.applySettings()
+        })
+        alert.addAction(UIAlertAction(title: "隐藏悬浮窗", style: .destructive) { [weak self] _ in
+            self?.hide()
+        })
+        alert.addAction(UIAlertAction(title: "取消", style: .cancel))
+        vc.present(alert, animated: true)
+    }
+
+    @objc private func floatPanned(_ pan: UIPanGestureRecognizer) {
+        guard let window = floatWindow else { return }
+        let translation = pan.translation(in: nil)
+        window.center = CGPoint(x: window.center.x + translation.x, y: window.center.y + translation.y)
+        pan.setTranslation(.zero, in: nil)
+    }
+}
+
+
+

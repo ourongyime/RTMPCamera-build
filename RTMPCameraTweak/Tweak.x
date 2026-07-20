@@ -1,6 +1,7 @@
 ﻿// Tweak.x - RTMPCameraTweak
 // Hook AVFoundation 将共享内存中的视频帧注入为系统摄像头画面
 // 使用代理模式拦截 AVCaptureVideoDataOutput delegate 回调
+// 支持视频/音频注入独立开关
 // 适配 iOS 16.1 + Dopamine RootHide + ElleKit
 
 #import <Foundation/Foundation.h>
@@ -8,6 +9,7 @@
 #import <AVFoundation/AVFoundation.h>
 #import <CoreMedia/CoreMedia.h>
 #import <CoreVideo/CoreVideo.h>
+#import <AudioToolbox/AudioToolbox.h>
 #import <objc/runtime.h>
 #import <objc/message.h>
 #import <sys/mman.h>
@@ -47,6 +49,21 @@ static BOOL initSharedMemory(void) {
     return YES;
 }
 
+// 检查视频注入是否启用
+static BOOL isVideoInjectionEnabled(void) {
+    if (g_sharedMemory == NULL) return YES; // 默认开启
+    if (g_sharedMemory->frameHeader.magic != 0x524D5046) return YES;
+    if (g_sharedMemory->frameHeader.videoInjectionEnabled == 0) return NO;
+    return YES;
+}
+
+// 检查音频注入是否启用
+static BOOL isAudioInjectionEnabled(void) {
+    if (g_sharedMemory == NULL) return NO;
+    if (g_sharedMemory->frameHeader.magic != 0x524D5046) return NO;
+    return g_sharedMemory->frameHeader.audioInjectionEnabled != 0;
+}
+
 static BOOL copyLatestFrame(uint8_t *dstBuffer, size_t dstSize, SharedFrameHeader *outHeader) {
     pthread_mutex_lock(&g_frameMutex);
 
@@ -58,6 +75,12 @@ static BOOL copyLatestFrame(uint8_t *dstBuffer, size_t dstSize, SharedFrameHeade
     }
 
     if (g_sharedMemory->frameHeader.magic != 0x524D5046) {
+        pthread_mutex_unlock(&g_frameMutex);
+        return NO;
+    }
+
+    // 检查注入开关
+    if (g_sharedMemory->frameHeader.videoInjectionEnabled == 0) {
         pthread_mutex_unlock(&g_frameMutex);
         return NO;
     }
@@ -160,8 +183,6 @@ static CMSampleBufferRef createSampleBufferFromSharedMemory(CMTime timestamp) {
 
 // ============================================================
 // RTMPProxyDelegate - 代理拦截器
-// 拦截 AVCaptureVideoDataOutputSampleBufferDelegate 回调
-// 将真实摄像头帧替换为共享内存中的虚拟帧
 // ============================================================
 
 @interface RTMPProxyDelegate : NSObject <AVCaptureVideoDataOutputSampleBufferDelegate>
@@ -184,12 +205,22 @@ static CMSampleBufferRef createSampleBufferFromSharedMemory(CMTime timestamp) {
 didOutputSampleBuffer:(CMSampleBufferRef)sampleBuffer
        fromConnection:(AVCaptureConnection *)connection {
 
+    // 检查视频注入开关
+    if (!isVideoInjectionEnabled()) {
+        // 注入关闭，直接转发原始帧
+        if ([self.originalDelegate respondsToSelector:@selector(captureOutput:didOutputSampleBuffer:fromConnection:)]) {
+            [self.originalDelegate captureOutput:output
+                         didOutputSampleBuffer:sampleBuffer
+                                fromConnection:connection];
+        }
+        return;
+    }
+
     // 尝试从共享内存获取虚拟帧
     CMTime timestamp = CMSampleBufferGetPresentationTimeStamp(sampleBuffer);
     CMSampleBufferRef virtualBuffer = createSampleBufferFromSharedMemory(timestamp);
 
     if (virtualBuffer) {
-        // 用虚拟帧代替真实帧，转发给原始 delegate
         if ([self.originalDelegate respondsToSelector:@selector(captureOutput:didOutputSampleBuffer:fromConnection:)]) {
             [self.originalDelegate captureOutput:output
                          didOutputSampleBuffer:virtualBuffer
@@ -217,7 +248,6 @@ didOutputSampleBuffer:(CMSampleBufferRef)sampleBuffer
     }
 }
 
-// 转发所有未知 selector 到原始 delegate
 - (id)forwardingTargetForSelector:(SEL)aSelector {
     if ([self.originalDelegate respondsToSelector:aSelector]) {
         return self.originalDelegate;
@@ -240,14 +270,12 @@ static const char kProxyDelegateKey = 'p';
 
 // ============================================================
 // Hook: AVCaptureVideoDataOutput setSampleBufferDelegate:queue:
-// 用代理对象包裹原始 delegate
 // ============================================================
 
 static void (*orig_setSampleBufferDelegate)(id, SEL, id, dispatch_queue_t);
 
 static void override_setSampleBufferDelegate(id self, SEL _cmd, id delegate, dispatch_queue_t queue) {
     if (delegate && [delegate conformsToProtocol:@protocol(AVCaptureVideoDataOutputSampleBufferDelegate)]) {
-        // 检查是否已经是代理
         RTMPProxyDelegate *proxy = objc_getAssociatedObject(delegate, &kProxyDelegateKey);
         if (!proxy) {
             proxy = [[RTMPProxyDelegate alloc] initWithOriginalDelegate:delegate];
@@ -306,10 +334,6 @@ static NSArray *override_formats(id self, SEL _cmd) {
         NSLog(@"[RTMPCameraTweak] 初始化完成");
     }
 }
-
-// ============================================================
-// %dtor - Tweak 卸载
-// ============================================================
 
 %dtor {
     NSLog(@"[RTMPCameraTweak] 正在卸载...");

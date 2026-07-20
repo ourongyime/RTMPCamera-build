@@ -1,5 +1,5 @@
 ﻿# RTMPDaemon Makefile
-# 后台守护进程 - RTMP拉流 + 帧缓冲管理
+# 后台守护进程 - RTMP接收 + 本地视频 + 帧缓冲共享内存
 
 ARCHS = arm64 arm64e
 TARGET = iphone:clang:16.1:16.1
