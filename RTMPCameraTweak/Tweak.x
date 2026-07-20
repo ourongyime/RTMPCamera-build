@@ -1,6 +1,6 @@
-// Tweak.x - RTMPCameraTweak v1.0.24
-// Minimal test: red overlay to verify tweak injection works
-// Also tries to inject video frames
+// Tweak.x - RTMPCameraTweak v1.0.26
+// File-based frame injection: VDO hook + PreviewLayer scanner
+// iOS 16.1 + Dopamine RootHide + ElleKit
 
 #import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
@@ -10,22 +10,22 @@
 #import <CoreImage/CoreImage.h>
 #import <substrate.h>
 
-static NSString *kDir = @"/tmp/rtmpcamera";
-static NSString *kLoadedFlag = @"/tmp/rtmpcamera/tweak_loaded";
-static NSString *kLogFile = @"/tmp/rtmpcamera/tweak.log";
-static NSString *kCfgFile = @"/tmp/rtmpcamera/config.plist";
-static NSString *kVideoFile = @"/tmp/rtmpcamera/current_video.mp4";
+static NSString *kDir = @"/var/mobile/Documents/rtmpcamera";
+static NSString *kLoadedFlag = @"/var/mobile/Documents/rtmpcamera/tweak_loaded";
+static NSString *kLogFile = @"/var/mobile/Documents/rtmpcamera/tweak.log";
+static NSString *kCfgFile = @"/var/mobile/Documents/rtmpcamera/config.plist";
+static NSString *kVideoFile = @"/var/mobile/Documents/rtmpcamera/current_video.mp4";
 
-// Player state
 static AVAssetReader *g_reader = nil;
 static AVAssetReaderTrackOutput *g_output = nil;
 static BOOL g_loop = YES;
 static BOOL g_injectVideo = YES;
 static NSInteger g_sourceType = 0;
 static CVPixelBufferRef g_lastPB = NULL;
-static pthread_mutex_t g_mutex = PTHREAD_MUTEX_INITIALIZER;
+static NSObject *g_lock = nil;
 static NSDate *g_lastCfg = nil;
 
+// --- Logging ---
 static void tlog(NSString *s) {
     NSLog(@"[RTMPCam] %@", s);
     NSDateFormatter *df = [[NSDateFormatter alloc] init]; df.dateFormat = @"HH:mm:ss";
@@ -36,6 +36,7 @@ static void tlog(NSString *s) {
            [l writeToFile:kLogFile atomically:NO encoding:NSUTF8StringEncoding error:nil]; }
 }
 
+// --- Config ---
 static void reloadCfg(void) {
     if (g_lastCfg && -[g_lastCfg timeIntervalSinceNow] < 0.5) return;
     g_lastCfg = [NSDate date];
@@ -51,9 +52,9 @@ static BOOL shouldInject(void) { reloadCfg(); return g_injectVideo && g_sourceTy
 // --- Video player ---
 static void stopVideo(void) {
     [g_reader cancelReading]; g_reader = nil; g_output = nil;
-    pthread_mutex_lock(&g_mutex);
-    if (g_lastPB) { CVPixelBufferRelease(g_lastPB); g_lastPB = NULL; }
-    pthread_mutex_unlock(&g_mutex);
+    @synchronized(g_lock) {
+        if (g_lastPB) { CVPixelBufferRelease(g_lastPB); g_lastPB = NULL; }
+    }
 }
 
 static BOOL startVideo(void) {
@@ -67,7 +68,7 @@ static BOOL startVideo(void) {
     g_output = [[AVAssetReaderTrackOutput alloc] initWithTrack:tracks[0] outputSettings:@{(id)kCVPixelBufferPixelFormatTypeKey:@(kCVPixelFormatType_32BGRA)}];
     [g_reader addOutput:g_output];
     [g_reader startReading];
-    tlog(@"Video started");
+    tlog(@"Video playback started");
     return YES;
 }
 
@@ -80,9 +81,10 @@ static CVPixelBufferRef nextFrame(void) {
     CMSampleBufferRef sb = [g_output copyNextSampleBuffer];
     if (!sb) { if (g_loop) { startVideo(); sb = [g_output copyNextSampleBuffer]; } if (!sb) return NULL; }
     CVPixelBufferRef pb = CMSampleBufferGetImageBuffer(sb); if (pb) CVPixelBufferRetain(pb); CFRelease(sb);
-    pthread_mutex_lock(&g_mutex);
-    if (g_lastPB) CVPixelBufferRelease(g_lastPB); g_lastPB = pb ? CVPixelBufferRetain(pb) : NULL;
-    pthread_mutex_unlock(&g_mutex);
+    @synchronized(g_lock) {
+        if (g_lastPB) CVPixelBufferRelease(g_lastPB);
+        g_lastPB = pb ? CVPixelBufferRetain(pb) : NULL;
+    }
     return pb;
 }
 
@@ -116,7 +118,7 @@ static void ovr(id s,SEL _c,id d,dispatch_queue_t q) {
     else orig(s,_c,d,q);
 }
 
-// --- Preview overlay ---
+// --- Preview layer scanner ---
 static void scanLayers(CALayer *l, CGImageRef img) {
     if(!l)return;
     if([l isKindOfClass:NSClassFromString(@"AVCaptureVideoPreviewLayer")])l.contents=(__bridge id)img;
@@ -125,28 +127,37 @@ static void scanLayers(CALayer *l, CGImageRef img) {
 
 %ctor {
     @autoreleasepool {
-        [[NSFileManager defaultManager] createDirectoryAtPath:kDir withIntermediateDirectories:YES attributes:nil error:nil];
+        g_lock = [NSObject new];
+        [[NSFileManager defaultManager] createDirectoryAtPath:kDir withIntermediateDirectories:YES attributes:@{NSFilePosixPermissions:@0777} error:nil];
         [[NSData data] writeToFile:kLoadedFlag atomically:NO];
-        tlog(@"=== v1.0.24 LOADED ===");
-        
+        tlog(@"=== v1.0.26 LOADED ===");
+
+        // Status
+        BOOL dirOk = [[NSFileManager defaultManager] fileExistsAtPath:kDir];
+        BOOL cfgOk = [[NSFileManager defaultManager] fileExistsAtPath:kCfgFile];
+        BOOL vidOk = [[NSFileManager defaultManager] fileExistsAtPath:kVideoFile];
+        tlog([NSString stringWithFormat:@"STATUS: dir=%d cfg=%d video=%d", dirOk, cfgOk, vidOk]);
+
         // Hook VDO
         Class vdo = NSClassFromString(@"AVCaptureVideoDataOutput");
         if(vdo){ MSHookMessageEx(vdo,@selector(setSampleBufferDelegate:queue:),(IMP)&ovr,(IMP*)&orig); tlog(@"VDO hooked"); }
-        
-        // Start video if configured
+        else { tlog(@"ERROR: VDO class not found"); }
+
+        // Start video
         reloadCfg();
         if(g_sourceType==2&&g_injectVideo){ startVideo(); }
-        
+
         // Preview timer
         static dispatch_source_t t;
         t = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER,0,0,dispatch_get_main_queue());
         dispatch_source_set_timer(t, dispatch_time(DISPATCH_TIME_NOW,1*NSEC_PER_SEC), (int64_t)(1.0/30.0*NSEC_PER_SEC), (int64_t)(0.005*NSEC_PER_SEC));
         dispatch_source_set_event_handler(t, ^{
             if(!shouldInject())return;
-            pthread_mutex_lock(&g_mutex);
-            CVPixelBufferRef pb = g_lastPB;
-            if(pb) CVPixelBufferRetain(pb);
-            pthread_mutex_unlock(&g_mutex);
+            CVPixelBufferRef pb = NULL;
+            @synchronized(g_lock) {
+                pb = g_lastPB;
+                if (pb) CVPixelBufferRetain(pb);
+            }
             if(!pb)return;
             CIImage *ci = [CIImage imageWithCVPixelBuffer:pb];
             CIContext *ctx = [CIContext contextWithOptions:nil];
@@ -159,6 +170,7 @@ static void scanLayers(CALayer *l, CGImageRef img) {
         });
         dispatch_resume(t);
         tlog(@"Preview timer started");
+        tlog(@"=== READY ===");
     }
 }
 %dtor { stopVideo(); tlog(@"Unloaded"); }
