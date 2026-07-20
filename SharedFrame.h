@@ -89,3 +89,8 @@ typedef struct {
 #define DEFAULT_RTMP_PORT 1935
 
 #endif
+
+// Swift 兼容: shm_open wrapper (因 Swift 不支持可变参数函数)
+static inline int rtmpcamera_shm_open(const char *name, int oflag, mode_t mode) {
+    return shm_open(name, oflag, mode);
+}

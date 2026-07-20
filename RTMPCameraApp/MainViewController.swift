@@ -134,7 +134,7 @@ class MainViewController: UIViewController {
     private func pollLogFromDaemon() {
         sharedFrameQueue.async { [weak self] in
             guard let self = self else { return }
-            let fd = shm_open(LOG_MEMORY_NAME, O_RDONLY, 0)
+            let fd = rtmpcamera_shm_open(LOG_MEMORY_NAME, O_RDONLY, 0)
             guard fd >= 0 else { return }
             defer { close(fd) }
 
@@ -150,11 +150,11 @@ class MainViewController: UIViewController {
                 let idx = i % Int(MAX_LOG_ENTRIES)
                 // Access entries array via raw pointer (C fixed-size array → Swift tuple)
                 let srcRaw = withUnsafeBytes(of: logBuf.pointee.entries) { raw -> UInt32 in
-                    let entryOffset = idx * MemoryLayout<SharedLogBuffer.LogEntry>.stride
+                    let entryOffset = idx * MemoryLayout<LogEntry>.stride
                     return raw.load(fromByteOffset: entryOffset + 8, as: UInt32.self)
                 }
                 let msgPtr = withUnsafeBytes(of: logBuf.pointee.entries) { raw -> UnsafePointer<CChar> in
-                    let entryOffset = idx * MemoryLayout<SharedLogBuffer.LogEntry>.stride
+                    let entryOffset = idx * MemoryLayout<LogEntry>.stride
                     return raw.baseAddress!.advanced(by: entryOffset + 12).assumingMemoryBound(to: CChar.self)
                 }
                 let msg = String(cString: msgPtr)
@@ -505,7 +505,7 @@ class MainViewController: UIViewController {
     private func sendControlCommand() {
         sharedFrameQueue.async { [weak self] in
             guard let self = self else { return }
-            let controlFD = shm_open(CONTROL_MEMORY_NAME, O_RDWR, 0)
+            let controlFD = rtmpcamera_shm_open(CONTROL_MEMORY_NAME, O_RDWR, 0)
             guard controlFD >= 0 else { DispatchQueue.main.async { self.addLog("⚠ 控制内存未创建") }; return }
             defer { close(controlFD) }
             let size = MemoryLayout<SharedControlData>.size
