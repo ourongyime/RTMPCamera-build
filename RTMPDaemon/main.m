@@ -34,6 +34,8 @@ static int g_sharedFrameFD = -1;
 static int g_controlFD = -1;
 static SharedMemoryLayout *g_sharedMemory = NULL;
 static SharedControlData *g_controlMemory = NULL;
+static int g_logFD = -1;
+static SharedLogBuffer *g_logBuffer = NULL;
 static pthread_mutex_t g_frameMutex = PTHREAD_MUTEX_INITIALIZER;
 static uint32_t g_frameIndex = 0;
 
@@ -41,7 +43,29 @@ static uint32_t g_frameIndex = 0;
 // 信号处理
 // ============================================================
 
-static void signalHandler(int sig) {
+
+// ============================================================
+// 日志写入 (共享内存)
+// ============================================================
+static void writeLog(const char *format, ...) {
+    if (g_logBuffer == NULL) return;
+    char msg[MAX_LOG_MSG_LEN];
+    va_list args;
+    va_start(args, format);
+    vsnprintf(msg, MAX_LOG_MSG_LEN, format, args);
+    va_end(args);
+    
+    uint32_t idx = g_logBuffer->writeIndex % MAX_LOG_ENTRIES;
+    g_logBuffer->entries[idx].timestamp = mach_absolute_time();
+    g_logBuffer->entries[idx].source = 0; // Daemon
+    strncpy(g_logBuffer->entries[idx].message, msg, MAX_LOG_MSG_LEN - 1);
+    g_logBuffer->entries[idx].message[MAX_LOG_MSG_LEN - 1] = '\0';
+    g_logBuffer->writeIndex++;
+    g_logBuffer->totalCount++;
+    
+    NSLog(@"[RTMPDaemon] %s", msg);
+}
+(int sig) {
     NSLog(@"[RTMPDaemon] 收到信号 %d, 准备退出", sig);
     g_running = NO;
 }
@@ -107,7 +131,20 @@ static BOOL initSharedMemory(void) {
         }
     }
 
-    NSLog(@"[RTMPDaemon] 共享内存初始化完成 (默认: 真实摄像头, 视频注入=开)");
+        // 日志共享内存
+    g_logFD = shm_open(LOG_MEMORY_NAME, O_RDWR | O_CREAT | O_TRUNC, 0644);
+    if (g_logFD >= 0) {
+        ftruncate(g_logFD, sizeof(SharedLogBuffer));
+        g_logBuffer = (SharedLogBuffer *)mmap(NULL, sizeof(SharedLogBuffer), PROT_READ | PROT_WRITE, MAP_SHARED, g_logFD, 0);
+        if (g_logBuffer != MAP_FAILED) {
+            memset(g_logBuffer, 0, sizeof(SharedLogBuffer));
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wincompatible-function-pointer-types"
+            writeLog("Daemon 启动 v1.0.2");
+#pragma clang diagnostic pop
+        } else { g_logBuffer = NULL; }
+    }
+     (默认: 真实摄像头, 视频注入=开)");
     return YES;
 }
 
@@ -149,7 +186,7 @@ static void writeFrameToSharedMemory(uint8_t *bgraData, size_t width, size_t hei
 // ============================================================
 
 static void *rtmpReceiveThread(void *arg) {
-    NSLog(@"[RTMPDaemon] RTMP 接收服务器启动 - 端口 1935");
+    writeLog("RTMP 接收服务器启动 - 端口 1935") - 端口 1935");
 
     int listenFD = socket(AF_INET, SOCK_STREAM, 0);
     if (listenFD < 0) {
@@ -178,7 +215,7 @@ static void *rtmpReceiveThread(void *arg) {
         return NULL;
     }
 
-    NSLog(@"[RTMPDaemon] RTMP 服务器已就绪, 等待 OBS 推流...");
+    writeLog("RTMP 服务器已就绪, 等待 OBS 推流..."), 等待 OBS 推流...");
 
     // 设置非阻塞
     int flags = fcntl(listenFD, F_GETFL, 0);
@@ -212,7 +249,7 @@ static void *rtmpReceiveThread(void *arg) {
                     clientFD = accept(listenFD, (struct sockaddr *)&clientAddr, &addrLen);
                     if (clientFD >= 0) {
                         clientConnected = YES;
-                        NSLog(@"[RTMPDaemon] OBS 已连接: %s", inet_ntoa(clientAddr.sin_addr));
+                        writeLog("OBS 已连接: %s", inet_ntoa(clientAddr.sin_addr)): %s", inet_ntoa(clientAddr.sin_addr));
                         // 设置客户端为非阻塞
                         int cflags = fcntl(clientFD, F_GETFL, 0);
                         fcntl(clientFD, F_SETFL, cflags | O_NONBLOCK);
@@ -224,7 +261,7 @@ static void *rtmpReceiveThread(void *arg) {
                 if (n <= 0) {
                     if (n == 0 || errno != EAGAIN) {
                         // 断开
-                        NSLog(@"[RTMPDaemon] OBS 已断开");
+                        writeLog("OBS 已断开")");
                         close(clientFD);
                         clientFD = -1;
                         clientConnected = NO;
@@ -275,7 +312,7 @@ static void *rtmpReceiveThread(void *arg) {
 // ============================================================
 
 static void *localVideoThread(void *arg) {
-    NSLog(@"[RTMPDaemon] 本地视频线程启动 (循环=%d): %s", g_loopEnabled, g_localVideoPath);
+    writeLog("本地视频线程启动 (循环=%d): %s", g_loopEnabled, g_localVideoPath) (循环=%d): %s", g_loopEnabled, g_localVideoPath);
 
     @autoreleasepool {
         NSString *path = [NSString stringWithUTF8String:g_localVideoPath];
@@ -500,9 +537,10 @@ int main(int argc, char *argv[]) {
         if (g_sharedMemory) { munmap(g_sharedMemory, SHARED_MEMORY_TOTAL_SIZE); }
         if (g_controlMemory) { munmap(g_controlMemory, sizeof(SharedControlData)); }
         if (g_sharedFrameFD >= 0) { close(g_sharedFrameFD); shm_unlink(SHARED_MEMORY_NAME); }
-        if (g_controlFD >= 0) { close(g_controlFD); shm_unlink(CONTROL_MEMORY_NAME); }
+        if (g_logBuffer && g_logBuffer != MAP_FAILED) { munmap(g_logBuffer, sizeof(SharedLogBuffer)); } if (g_logFD >= 0) { close(g_logFD); shm_unlink(LOG_MEMORY_NAME); } if (g_controlFD >= 0) { close(g_controlFD); shm_unlink(CONTROL_MEMORY_NAME); }
 
         NSLog(@"[RTMPDaemon] 已退出");
     }
     return 0;
 }
+

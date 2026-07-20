@@ -20,9 +20,10 @@ ADDITIONAL_CFLAGS = -fobjc-arc -I$(THEOS_PROJECT_DIR)
 include $(THEOS_MAKE_PATH)/aggregate.mk
 
 # 打包配置
-PACKAGE_VERSION = 1.0.0
+PACKAGE_VERSION = 1.0.2
 PACKAGE_BUILD = 1
 
 # 安装目标 (RootHide 路径)
 after-install::
 	install.exec "killall -9 SpringBoard || true"
+
