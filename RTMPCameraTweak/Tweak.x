@@ -255,8 +255,6 @@ static void override_setDelegate(id self, SEL _cmd, id delegate, dispatch_queue_
 // ============================================================
 static void (*orig_previewInitWithSession)(id, SEL, id);
 static void (*orig_previewSetSession)(id, SEL, id);
-static void (*orig_previewDealloc)(id, SEL);
-static void (*orig_previewRemoveFromSuperlayer)(id, SEL);
 
 static void override_previewInitWithSession(id self, SEL _cmd, id session) {
     orig_previewInitWithSession(self, _cmd, session);
