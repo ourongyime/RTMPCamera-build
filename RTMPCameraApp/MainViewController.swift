@@ -506,62 +506,48 @@ class MainViewController: UIViewController {
     }
 
 
-    private func ensureDaemonRunning() -> Bool {
-        // iOS 限制无法调用 shell，只能通过重试等待 daemon 自行启动
-        for i in 0..<5 {
-            let fd = rtmpcamera_shm_open(CONTROL_MEMORY_NAME, O_RDWR, 0)
-            if fd >= 0 {
-                close(fd)
-                return true
-            }
-            Thread.sleep(forTimeInterval: 0.5)
+    private func openOrCreateControlMemory() -> Int32 {
+        // 先尝试打开已有的共享内存
+        var fd = rtmpcamera_shm_open(CONTROL_MEMORY_NAME, O_RDWR, 0)
+        if fd >= 0 { return fd }
+        // 不存在则创建（daemon 未启动时由 app 创建）
+        fd = rtmpcamera_shm_open(CONTROL_MEMORY_NAME, O_RDWR | O_CREAT, 0644)
+        if fd >= 0 {
+            ftruncate(fd, off_t(MemoryLayout<SharedControlData>.size))
+            addLog("控制内存已由 App 创建")
         }
-        return false
+        return fd
     }
 
     private func sendControlCommand() {
         sharedFrameQueue.async { [weak self] in
             guard let self = self else { return }
-            let controlFD = rtmpcamera_shm_open(CONTROL_MEMORY_NAME, O_RDWR, 0)
+            let controlFD = self.openOrCreateControlMemory()
             guard controlFD >= 0 else {
-                DispatchQueue.main.async { self.addLog("控制内存未创建，正在启动守护进程...") }
-                if self.ensureDaemonRunning() {
-                    Thread.sleep(forTimeInterval: 0.8)
-                    let retryFD = rtmpcamera_shm_open(CONTROL_MEMORY_NAME, O_RDWR, 0)
-                    if retryFD >= 0 {
-                        self.writeControlData(retryFD)
-                        DispatchQueue.main.async { self.addLog("守护进程已启动，设置已应用") }
-                        return
-                    }
-                }
-                DispatchQueue.main.async { self.addLog("守护进程启动失败，请检查安装或重启手机") }
+                DispatchQueue.main.async { self.addLog("控制内存创建失败") }
                 return
             }
-            self.writeControlData(controlFD)
-        }
-    }
-
-    private func writeControlData(_ fd: Int32) {
-        defer { close(fd) }
-        let size = MemoryLayout<SharedControlData>.size
-        let ptr = mmap(nil, size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0)
-        guard ptr != MAP_FAILED else { return }
-        defer { munmap(ptr, size) }
-        let ctrl = ptr!.bindMemory(to: SharedControlData.self, capacity: 1)
-        ctrl.pointee.command = 1
-        ctrl.pointee.sourceType = UInt32(self.currentSource.rawValue)
-        ctrl.pointee.videoInjectionEnabled = self.videoInjectionOn ? 1 : 0
-        ctrl.pointee.audioInjectionEnabled = self.audioInjectionOn ? 1 : 0
-        ctrl.pointee.loopEnabled = self.loopEnabled ? 1 : 0
-        let url = self.rtmpURL.utf8CString
-        withUnsafeMutablePointer(to: &ctrl.pointee.rtmpURL) { d in
-            _ = url.withUnsafeBytes { s in memcpy(d, s.baseAddress!, min(s.count, Int(MAX_RTMP_URL_LENGTH-1))) }
-            UnsafeMutableRawPointer(d).assumingMemoryBound(to: CChar.self).advanced(by: Int(MAX_RTMP_URL_LENGTH)-1).pointee = 0
-        }
-        let vidPath = self.localVideoPath.utf8CString
-        withUnsafeMutablePointer(to: &ctrl.pointee.localVideoPath) { d in
-            _ = vidPath.withUnsafeBytes { s in memcpy(d, s.baseAddress!, min(s.count, Int(MAX_VIDEO_PATH_LENGTH-1))) }
-            UnsafeMutableRawPointer(d).assumingMemoryBound(to: CChar.self).advanced(by: Int(MAX_VIDEO_PATH_LENGTH)-1).pointee = 0
+            defer { close(controlFD) }
+            let size = MemoryLayout<SharedControlData>.size
+            let ptr = mmap(nil, size, PROT_READ | PROT_WRITE, MAP_SHARED, controlFD, 0)
+            guard ptr != MAP_FAILED else { return }
+            defer { munmap(ptr, size) }
+            let ctrl = ptr!.bindMemory(to: SharedControlData.self, capacity: 1)
+            ctrl.pointee.command = 1
+            ctrl.pointee.sourceType = UInt32(self.currentSource.rawValue)
+            ctrl.pointee.videoInjectionEnabled = self.videoInjectionOn ? 1 : 0
+            ctrl.pointee.audioInjectionEnabled = self.audioInjectionOn ? 1 : 0
+            ctrl.pointee.loopEnabled = self.loopEnabled ? 1 : 0
+            let url = self.rtmpURL.utf8CString
+            withUnsafeMutablePointer(to: &ctrl.pointee.rtmpURL) { d in
+                _ = url.withUnsafeBytes { s in memcpy(d, s.baseAddress!, min(s.count, Int(MAX_RTMP_URL_LENGTH-1))) }
+                UnsafeMutableRawPointer(d).assumingMemoryBound(to: CChar.self).advanced(by: Int(MAX_RTMP_URL_LENGTH)-1).pointee = 0
+            }
+            let vidPath = self.localVideoPath.utf8CString
+            withUnsafeMutablePointer(to: &ctrl.pointee.localVideoPath) { d in
+                _ = vidPath.withUnsafeBytes { s in memcpy(d, s.baseAddress!, min(s.count, Int(MAX_VIDEO_PATH_LENGTH-1))) }
+                UnsafeMutableRawPointer(d).assumingMemoryBound(to: CChar.self).advanced(by: Int(MAX_VIDEO_PATH_LENGTH)-1).pointee = 0
+            }
         }
     }
     private func loadSavedConfig() {
