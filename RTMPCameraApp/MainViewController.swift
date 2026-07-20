@@ -507,10 +507,16 @@ class MainViewController: UIViewController {
 
 
     private func ensureDaemonRunning() -> Bool {
-        // iOS 不支持 Process，使用 system() 调用
-        let cmd = "if [ -d /var/jb ]; then PREFIX=/var/jb; else PREFIX=; fi; launchctl load \"$PREFIX/Library/LaunchDaemons/com.rtmpcamera.daemon.plist\" 2>/dev/null"
-        let result = system(cmd)
-        return result == 0
+        // iOS 限制无法调用 shell，只能通过重试等待 daemon 自行启动
+        for i in 0..<5 {
+            let fd = rtmpcamera_shm_open(CONTROL_MEMORY_NAME, O_RDWR, 0)
+            if fd >= 0 {
+                close(fd)
+                return true
+            }
+            Thread.sleep(forTimeInterval: 0.5)
+        }
+        return false
     }
 
     private func sendControlCommand() {
