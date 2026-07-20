@@ -2,7 +2,7 @@ Package: com.rtmpcamera.camera
 Name: RTMPCamera
 Version: 1.0.10
 Architecture: iphoneos-arm64e
-Description: iOS虚拟摄像�?- RTMP接收/本地视频/注入开�?悬浮�?日志 v1.0.10
+Description: iOS Virtual Camera - RTMP/Video/Injection/Floating/Log v1.0.10
 Maintainer: ourongyime <9450915@qq.com>
 Author: ourongyime <9450915@qq.com>
 Section: Tweaks
