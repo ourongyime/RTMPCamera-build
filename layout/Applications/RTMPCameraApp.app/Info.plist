@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>zh_CN</string>
 	<key>CFBundleDisplayName</key>
-	<string>虚拟摄像头</string>
+	<string>RTMPCamera</string>
 	<key>CFBundleExecutable</key>
 	<string>RTMPCameraApp</string>
 	<key>CFBundleIdentifier</key>
@@ -17,9 +17,9 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.0.8</string>
+	<string>1.0.9</string>
 	<key>CFBundleVersion</key>
-	<string>8</string>
+	<string>9</string>
 	<key>CFBundleIconFiles</key>
 	<array>
 		<string>AppIcon60x60</string>
@@ -37,9 +37,9 @@
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSCameraUsageDescription</key>
-	<string>虚拟摄像头需要访问相机进行画面预览和注入</string>
+	<string>Camera access for preview and injection</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>虚拟摄像头需要访问麦克风进行音频注入</string>
+	<string>Microphone access for audio injection</string>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIRequiredDeviceCapabilities</key>

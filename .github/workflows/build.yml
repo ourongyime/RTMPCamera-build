@@ -32,6 +32,12 @@ jobs:
           export SDKVERSION=16.5
           chmod 755 layout/DEBIAN/*
           make package FINALPACKAGE=1
+          # 覆盖 Info.plist（Theos 生成的 plist 可能损坏中文/缺少图标配置）
+          cp RTMPCameraApp/Info.plist .theos/obj/RTMPCameraApp.app/Info.plist 2>/dev/null || true
+          # 如果 .theos 位置不同，尝试查找
+          find . -name "RTMPCameraApp.app" -type d 2>/dev/null | while read d; do cp RTMPCameraApp/Info.plist "\/Info.plist"; done
+          # 重新打包
+          make package FINALPACKAGE=1
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4

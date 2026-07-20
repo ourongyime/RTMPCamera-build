@@ -13,6 +13,7 @@ RTMPCameraApp_FRAMEWORKS = UIKit Foundation AVFoundation CoreMedia CoreGraphics 
 RTMPCameraApp_PRIVATE_FRAMEWORKS =
 RTMPCameraApp_CFLAGS = -fobjc-arc
 RTMPCameraApp_SWIFTFLAGS = -target arm64-apple-ios16.0 -import-objc-header ../SharedFrame.h
+RTMPCameraApp_ICON_FILES = AppIcon60x60
 RTMPCameraApp_INSTALL_PATH = /Applications
 
 include $(THEOS_MAKE_PATH)/application.mk
