@@ -18,6 +18,7 @@
 #import <unistd.h>
 #import <dlfcn.h>
 #import <pthread.h>
+#import <substrate.h>
 #import "../SharedFrame.h"
 
 // ============================================================
