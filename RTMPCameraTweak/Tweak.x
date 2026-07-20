@@ -100,23 +100,13 @@ static void scanAndInjectLayers(CALayer *layer, CGImageRef img) {
 }
 
 static void updateAllPreviews(CGImageRef img) {
-    // Get all windows from all scenes
-    NSArray *scenes = nil;
-    if (@available(iOS 13.0, *)) {
-        NSSet *ss = [UIApplication sharedApplication].connectedScenes;
-        NSMutableArray *ws = [NSMutableArray array];
-        for (id scene in ss) {
-            if ([scene respondsToSelector:@selector(windows)]) {
-                [ws addObjectsFromArray:[scene valueForKey:@"windows"]];
+    NSSet *ss = [UIApplication sharedApplication].connectedScenes;
+    for (id scene in ss) {
+        if ([scene respondsToSelector:@selector(windows)]) {
+            for (UIWindow *w in [scene valueForKey:@"windows"]) {
+                scanAndInjectLayers(w.layer, img);
             }
         }
-        for (UIWindow *w in ws) {
-            scanAndInjectLayers(w.layer, img);
-        }
-    }
-    // Fallback
-    for (UIWindow *w in [UIApplication sharedApplication].windows) {
-        scanAndInjectLayers(w.layer, img);
     }
 }
 
