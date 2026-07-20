@@ -1,29 +1,29 @@
-# RTMPCamera - iOS 铏氭嫙鎽勫儚澶?
-# 閫傞厤 iPhone 12 Pro + iOS 16.1 + Dopamine RootHide 鏃犳牴瓒婄嫳
+# RTMPCamera - iOS 閾忔碍瀚欓幗鍕剼婢?
+# 闁倿鍘?iPhone 12 Pro + iOS 16.1 + Dopamine RootHide 閺冪姵鐗寸搾濠勫
 
 ARCHS = arm64 arm64e
 TARGET = iphone:clang:16.5:16.0
 INSTALL_TARGET_PROCESSES = SpringBoard
 
-# RootHide 鏃犳牴瓒婄嫳蹇呴』閰嶇疆
+# RootHide 閺冪姵鐗寸搾濠勫韫囧懘銆忛柊宥囩枂
 THEOS_PACKAGE_SCHEME = rootless
 
-# 鑱氬悎缂栬瘧 (瀛愰」鐩?
+# 閼辨艾鎮庣紓鏍槯 (鐎涙劙銆嶉惄?
 include $(THEOS)/makefiles/common.mk
 
-# 瀛愰」鐩畾涔?
+# 鐎涙劙銆嶉惄顔肩暰娑?
 SUBPROJECTS = RTMPDaemon RTMPCameraTweak RTMPCameraApp
 
-# 娣诲姞鍏变韩澶存枃浠舵悳绱㈣矾寰?
+# 濞ｈ濮為崗鍙橀煩婢跺瓨鏋冩禒鑸垫偝缁便垼鐭惧?
 ADDITIONAL_CFLAGS = -fobjc-arc -I$(THEOS_PROJECT_DIR)
 
 include $(THEOS_MAKE_PATH)/aggregate.mk
 
-# 鎵撳寘閰嶇疆
-PACKAGE_VERSION = 1.0.2
+# 閹垫挸瀵橀柊宥囩枂
+PACKAGE_VERSION = 1.0.3
 PACKAGE_BUILD = 1
 
-# 瀹夎鐩爣 (RootHide 璺緞)
+# 鐎瑰顥婇惄顔界垼 (RootHide 鐠侯垰绶?
 after-install::
 	install.exec "killall -9 SpringBoard || true"
 
