@@ -34,7 +34,7 @@ jobs:
 
       - name: Download iOS SDK
         run: |
-          SDK_URL="https://github.com/theos/sdks/releases/download/master/iPhoneOS16.5.sdk.tar.xz"
+          SDK_URL="https://github.com/theos/sdks/releases/download/master-146e41f/iPhoneOS16.5.sdk.tar.xz"
           curl -fsSL --retry 3 -o /tmp/sdk.tar.xz "$SDK_URL"
           tar -xf /tmp/sdk.tar.xz -C $HOME/theos/sdks/
           ls -la $HOME/theos/sdks/
