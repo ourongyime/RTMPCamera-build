@@ -17,7 +17,8 @@
 #import <fcntl.h>
 #import <unistd.h>
 #import <dlfcn.h>
-#import "../../SharedFrame.h"
+#import <pthread.h>
+#import "../SharedFrame.h"
 
 // ============================================================
 // 共享内存操作
