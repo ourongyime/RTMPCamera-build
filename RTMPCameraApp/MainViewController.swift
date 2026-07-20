@@ -148,9 +148,18 @@ class MainViewController: UIViewController {
             let start = max(0, total - 20)
             for i in start..<total {
                 let idx = i % Int(MAX_LOG_ENTRIES)
-                let entriesBase = withUnsafePointer(to: &logBuf.pointee.entries) { UnsafeRawPointer(let msg = String(cString: logBuf.pointee.entries[idx].message)).assumingMemoryBound(to: SharedLogBuffer.LogEntry.self) }; let msg = String(cString: entriesBase[idx].message)
+                // Access entries array via raw pointer (C fixed-size array → Swift tuple)
+                let srcRaw = withUnsafeBytes(of: logBuf.pointee.entries) { raw -> UInt32 in
+                    let entryOffset = idx * MemoryLayout<SharedLogBuffer.LogEntry>.stride
+                    return raw.load(fromByteOffset: entryOffset + 8, as: UInt32.self)
+                }
+                let msgPtr = withUnsafeBytes(of: logBuf.pointee.entries) { raw -> UnsafePointer<CChar> in
+                    let entryOffset = idx * MemoryLayout<SharedLogBuffer.LogEntry>.stride
+                    return raw.baseAddress!.advanced(by: entryOffset + 12).assumingMemoryBound(to: CChar.self)
+                }
+                let msg = String(cString: msgPtr)
                 if !msg.isEmpty {
-                    let src = ["Daemon","Tweak","App"][Int(logBuf.pointee.entries[idx].source) % 3]
+                    let src = ["Daemon","Tweak","App"][Int(srcRaw) % 3]
                     DispatchQueue.main.async { self.addLog("[\(src)] \(msg)") }
                 }
             }
