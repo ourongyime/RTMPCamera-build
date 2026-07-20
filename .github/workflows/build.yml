@@ -1,4 +1,4 @@
-﻿name: Build RTMPCamera
+﻿name: Build RTMPCamera (Linux Cross-Compile)
 
 on:
   push:
@@ -7,44 +7,38 @@ on:
 
 jobs:
   build:
-    runs-on: macos-13
-    timeout-minutes: 20
+    runs-on: ubuntu-22.04
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Setup Theos and Build
+      - name: Install Dependencies
         run: |
-          set -e
-          brew install make ldid xz 2>/dev/null || true
-          export PATH="/usr/local/opt/make/libexec/gnubin:$PATH"
+          sudo apt-get update
+          sudo apt-get install -y clang ldid git make perl curl xz-utils dpkg-dev fakeroot
 
-          sudo xcode-select -s /Applications/Xcode_15.2.app 2>/dev/null || sudo xcode-select -s /Applications/Xcode.app 2>/dev/null || true
-          xcode-select -p
-
+      - name: Setup Theos on Linux
+        run: |
           THEOS_DIR="$HOME/theos"
-          if [ ! -d "$THEOS_DIR" ]; then
-            git clone --recursive https://github.com/theos/theos.git "$THEOS_DIR" 2>/dev/null || \
-            git clone --recursive https://hub.fastgit.xyz/theos/theos.git "$THEOS_DIR" 2>/dev/null || \
-            git clone --recursive https://github.com/theos/theos.git "$THEOS_DIR"
-          fi
-          export THEOS="$THEOS_DIR"
+          git clone --recursive https://github.com/theos/theos.git "$THEOS_DIR" --depth 1 2>/dev/null || true
+          echo "THEOS=$THEOS_DIR" >> $GITHUB_ENV
           mkdir -p "$THEOS_DIR/sdks"
 
-          SDK_PATH=$(xcrun --sdk iphoneos --show-sdk-path 2>/dev/null || echo "")
-          [ -z "$SDK_PATH" ] && { echo "ERROR: No SDK"; exit 1; }
+      - name: Download iOS SDK
+        run: |
+          SDK_URL="https://github.com/theos/sdks/releases/download/master/iPhoneOS16.5.sdk.tar.xz"
+          curl -fsSL -o /tmp/sdk.tar.xz "$SDK_URL" || \
+          curl -fsSL -o /tmp/sdk.tar.xz "https://ghproxy.com/$SDK_URL"
+          tar -xf /tmp/sdk.tar.xz -C $HOME/theos/sdks/
+          ls -la $HOME/theos/sdks/
 
-          SDK_VER=$(xcrun --sdk iphoneos --show-sdk-version)
-          echo "SDK: $SDK_VER at $SDK_PATH"
-          ln -sf "$SDK_PATH" "$THEOS_DIR/sdks/iPhoneOS${SDK_VER}.sdk"
-
-          find . -name "Makefile" -type f -exec sed -i '' "s/iphone:clang:[0-9.]*:[0-9.]*/iphone:clang:${SDK_VER}:16.0/g" {} +
-
-          make clean 2>/dev/null || true
+      - name: Build
+        run: |
+          export THEOS=$HOME/theos
+          export SDKVERSION=16.5
+          export TARGET=iphone:clang:16.5:16.0
+          find . -name "Makefile" -type f -exec sed -i "s/iphone:clang:[0-9.]*:[0-9.]*/iphone:clang:16.5:16.0/g" {} +
           make package FINALPACKAGE=1
-
-          echo "=== Generated .deb ==="
-          find . -name "*.deb" -type f -ls
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
