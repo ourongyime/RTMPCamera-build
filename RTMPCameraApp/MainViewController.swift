@@ -63,7 +63,7 @@ class MainViewController: UIViewController {
     private var logPollTimer: Timer?
     private let sharedFrameQueue = DispatchQueue(label: "com.rtmpcamera.app")
     private let defaultRTMPPort = 1935
-    private let appVersion = "1.0.21"
+    private let appVersion = "1.0.22"
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -513,9 +513,9 @@ class MainViewController: UIViewController {
     private var videoReader: AVAssetReader?
     private var videoReaderOutput: AVAssetReaderTrackOutput?
     private var videoPlaybackTimer: Timer?
-    private let frameOutputDir = "/var/mobile/Documents/rtmpcamera"
-    private let frameFile = "/var/mobile/Documents/rtmpcamera/current_frame.raw"
-    private let metaFile = "/var/mobile/Documents/rtmpcamera/meta.plist"
+    private let frameOutputDir = "/tmp/rtmpcamera"
+    private let frameFile = "/tmp/rtmpcamera/current_frame.raw"
+    private let metaFile = "/tmp/rtmpcamera/meta.plist"
 
     private func startVideoProcessing() {
         stopVideoProcessing()
