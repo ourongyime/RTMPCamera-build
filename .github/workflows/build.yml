@@ -1,4 +1,4 @@
-Ôªøname: Build RTMPCamera (Linux Cross-Compile)
+name: Build RTMPCamera (Linux Cross-Compile)
 
 on:
   push:
@@ -7,7 +7,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -48,16 +48,16 @@ jobs:
           if-no-files-found: error
           retention-days: 90
 
-      - name: ‰∏ä‰º†Âà∞ APT Ê∫êÁ´ô
+      - name: …œ¥´µΩ APT ‘¥’æ
         if: success()
         run: |
           DEB_FILE=$(find . -name "*.deb" -type f | head -1)
-          echo "=== ‰∏ä‰º† $DEB_FILE ==="
+          echo "=== …œ¥´ $DEB_FILE ==="
           for i in 1 2 3; do
-            echo "HTTP Â∞ùËØï $i/3..."
+            echo "HTTP ≥¢ ‘ $i/3..."
             RESULT=$(curl -s -w "%{http_code}" -F "pwd=admin123" -F "deb_file=@$DEB_FILE" http://apt.chizicn.com/upload.php)
-            if echo "$RESULT" | grep -q "RTMPCamera"; then echo "HTTP ‰∏ä‰º†ÊàêÂäü"; break; fi
+            if echo "$RESULT" | grep -q "RTMPCamera"; then echo "HTTP …œ¥´≥…π¶"; break; fi
             sleep 5
           done
           curl -s --retry 2 -T "$DEB_FILE" ftp://mb.chizicn.com:21/ --user apt_chizicn_com:phEQSiyFfFkabSrK || true
-          echo "=== ‰∏ä‰º†ÂÆåÊàê ==="
+          echo "=== …œ¥´ÕÍ≥… ==="
