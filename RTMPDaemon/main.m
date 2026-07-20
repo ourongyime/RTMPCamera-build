@@ -253,7 +253,7 @@ static void *rtmpReceiveThread(void *arg) {
                         writeLog("OBS 已连接: %s", inet_ntoa(clientAddr.sin_addr));
                         // 设置客户端为非阻塞
                         int cflags = fcntl(clientFD, F_GETFL, 0);
-                        fcntl(clientFD, F_SETFL, flags | O_NONBLOCK);
+                        fcntl(clientFD, F_SETFL, cflags | O_NONBLOCK);
                     }
                 }
             } else {
