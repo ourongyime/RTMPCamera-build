@@ -14,6 +14,7 @@
 #import <unistd.h>
 #import <pthread.h>
 #import <signal.h>
+#import <mach/mach_time.h>
 #import <sys/socket.h>
 #import <netinet/in.h>
 #import <arpa/inet.h>
@@ -65,7 +66,7 @@ static void writeLog(const char *format, ...) {
     
     NSLog(@"[RTMPDaemon] %s", msg);
 }
-(int sig) {
+static void signalHandler(int sig) {
     NSLog(@"[RTMPDaemon] 收到信号 %d, 准备退出", sig);
     g_running = NO;
 }
@@ -144,7 +145,7 @@ static BOOL initSharedMemory(void) {
 #pragma clang diagnostic pop
         } else { g_logBuffer = NULL; }
     }
-     (默认: 真实摄像头, 视频注入=开)");
+    writeLog("共享内存初始化完成 (默认: 真实摄像头, 视频注入=开)");
     return YES;
 }
 
