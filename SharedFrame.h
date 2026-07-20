@@ -61,7 +61,7 @@ typedef struct {
 typedef struct {
     uint32_t writeIndex;                    // 当前写入位置
     uint32_t totalCount;                    // 总日志条数
-    struct {
+    struct LogEntry {
         uint64_t timestamp;                 // mach_absolute_time
         uint32_t source;                    // 0=Daemon, 1=Tweak, 2=App
         char     message[MAX_LOG_MSG_LEN];  // 日志消息

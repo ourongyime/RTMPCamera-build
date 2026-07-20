@@ -512,7 +512,7 @@ class MainViewController: UIViewController {
             let url = self.rtmpURL.utf8CString
             withUnsafeMutablePointer(to: &ctrl.pointee.rtmpURL) { d in
                 _ = url.withUnsafeBytes { s in memcpy(d, s.baseAddress!, min(s.count, Int(MAX_RTMP_URL_LENGTH-1))) }
-                d[min(url.count, MAX_RTMP_URL_LENGTH-1)] = 0
+                d.advanced(by: Int(MAX_RTMP_URL_LENGTH)-1).pointee = 0
             }
         }
     }
