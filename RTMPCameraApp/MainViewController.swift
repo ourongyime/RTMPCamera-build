@@ -506,36 +506,25 @@ class MainViewController: UIViewController {
     }
 
 
-    private func openOrCreateControlMemory() -> Int32 {
-        // 先尝试打开已有的共享内存
-        var fd = rtmpcamera_shm_open(CONTROL_MEMORY_NAME, O_RDWR, 0)
-        if fd >= 0 { return fd }
-        // 不存在则创建（daemon 未启动时由 app 创建）
-        fd = rtmpcamera_shm_open(CONTROL_MEMORY_NAME, O_RDWR | O_CREAT, 0644)
-        if fd >= 0 {
-            ftruncate(fd, off_t(MemoryLayout<SharedControlData>.size))
-            addLog("控制内存已由 App 创建")
-        }
-        return fd
-    }
-
 
     private func sendControlCommand() {
+        let sourceNames = ["真实摄像头", "RTMP推流", "本地视频"]
+        addLog("应用设置: \(sourceNames[currentSource.rawValue]) 视频注入=\(videoInjectionOn ? "开" : "关") 音频注入=\(audioInjectionOn ? "开" : "关")")
         let dir = "/var/jb/tmp"
         try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true, attributes: nil)
         let dict: [String: Any] = [
-            "command": 1,
-            "sourceType": currentSource.rawValue,
-            "videoInjectionEnabled": videoInjectionOn,
-            "audioInjectionEnabled": audioInjectionOn,
-            "loopEnabled": loopEnabled,
-            "rtmpURL": rtmpURL,
-            "localVideoPath": localVideoPath
+            "command": 1, "sourceType": currentSource.rawValue,
+            "videoInjectionEnabled": videoInjectionOn, "audioInjectionEnabled": audioInjectionOn,
+            "loopEnabled": loopEnabled, "rtmpURL": rtmpURL, "localVideoPath": localVideoPath
         ]
         if let data = try? PropertyListSerialization.data(fromPropertyList: dict, format: .xml, options: 0) {
-            let path = "\(dir)/rtmpcamera_control.plist"
-            try? data.write(to: URL(fileURLWithPath: path), options: .atomic)
-            DispatchQueue.main.async { self.addLog("控制数据已写入 \(path)") }
+            let path = dir + "/rtmpcamera_control.plist"
+            do {
+                try data.write(to: URL(fileURLWithPath: path), options: .atomic)
+                addLog("控制文件已写入: \(path)")
+            } catch {
+                addLog("控制文件写入失败: \(error.localizedDescription)")
+            }
         }
     }
     private func loadSavedConfig() {
