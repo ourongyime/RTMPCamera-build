@@ -59,7 +59,7 @@ class MainViewController: UIViewController {
     private var phoneIP: String = ""
     private var logLines: [String] = []
     private let defaultRTMPPort = 1935
-    private let appVersion = "1.0.26"
+    private let appVersion = "1.0.27"
 
     private let tweakDir = "/var/mobile/Documents/rtmpcamera"
     private let tweakCfgFile = "/var/mobile/Documents/rtmpcamera/config.plist"
@@ -180,7 +180,7 @@ class MainViewController: UIViewController {
 
     @objc private func copyLog() {
         UIPasteboard.general.string = logLines.joined(separator: "\n")
-        addLog("Log copied to clipboard")
+        addLog("日志已复制到剪贴板")
     }
 
     // MARK: - Camera Preview
@@ -253,10 +253,10 @@ class MainViewController: UIViewController {
     @objc func toggleFloatingWindow() {
         if FloatingWindowManager.shared.isShowingWindow {
             FloatingWindowManager.shared.hide()
-            floatBtn.setTitle("Float: OFF", for: .normal)
+            floatBtn.setTitle("悬浮窗:关", for: .normal)
         } else {
             FloatingWindowManager.shared.show(with: self)
-            floatBtn.setTitle("Float: ON", for: .normal)
+            floatBtn.setTitle("悬浮窗:开", for: .normal)
         }
     }
 
@@ -264,18 +264,18 @@ class MainViewController: UIViewController {
         currentSource = .realCamera; rtmpURL = "rtmp://\(phoneIP):\(defaultRTMPPort)/live/stream"
         localVideoPath = ""; videoInjectionOn = true; audioInjectionOn = false; loopEnabled = true
         videoInjectionSwitch.isOn = true; audioInjectionSwitch.isOn = false; loopSwitch.isOn = true
-        localVideoPathLabel.text = "Not selected"; localVideoPathLabel.textColor = .secondaryLabel
+        localVideoPathLabel.text = "未选择"; localVideoPathLabel.textColor = .secondaryLabel
         updateSourceButtons(); updateCardVisibility(); showCameraPreview(); applySettings()
-        addLog("All settings reset to default")
+        addLog("已还原默认设置")
     }
 
     @objc func applySettings() {
         switch currentSource {
-        case .realCamera: statusLabel.text = "Current: Real Camera"; statusIndicator.backgroundColor = .systemGreen; showCameraPreview()
-        case .rtmpStream: statusLabel.text = "Current: RTMP Stream"; statusIndicator.backgroundColor = .systemBlue; showCameraPreview()
+        case .realCamera: statusLabel.text = "当前: 真实摄像头"; statusIndicator.backgroundColor = .systemGreen; showCameraPreview()
+        case .rtmpStream: statusLabel.text = "当前: RTMP推流"; statusIndicator.backgroundColor = .systemBlue; showCameraPreview()
         case .localVideo:
             let n = localVideoPath.isEmpty ? "None" : (localVideoPath as NSString).lastPathComponent
-            statusLabel.text = "Current: Local Video (\(n))"; statusIndicator.backgroundColor = .systemOrange
+            statusLabel.text = "当前: 本地视频 (\(n))"; statusIndicator.backgroundColor = .systemOrange
             if !localVideoPath.isEmpty { startVideoPreview() }
         }
         sendControlCommand()
@@ -286,13 +286,13 @@ class MainViewController: UIViewController {
         UserDefaults.standard.set(audioInjectionOn, forKey: "audioInjection")
         UserDefaults.standard.set(loopEnabled, forKey: "loopEnabled")
         UserDefaults.standard.synchronize()
-        addLog("Settings applied: \(["Real","RTMP","Local"][currentSource.rawValue])")
+        addLog("设置已应用: \(["Real","RTMP","Local"][currentSource.rawValue])")
     }
 
     // MARK: - Tweak config
     private func sendControlCommand() {
-        let names = ["Real Camera", "RTMP Stream", "Local Video"]
-        addLog("Config: \(names[currentSource.rawValue]) Video=\(videoInjectionOn ? "ON":"OFF") Audio=\(audioInjectionOn ? "ON":"OFF") Loop=\(loopEnabled ? "ON":"OFF")")
+        let names = ["真实摄像头", "RTMP推流", "本地视频"]
+        addLog("配置: \(names[currentSource.rawValue]) Video=\(videoInjectionOn ? "ON":"OFF") Audio=\(audioInjectionOn ? "ON":"OFF") Loop=\(loopEnabled ? "ON":"OFF")")
         applyConfigToTweak()
     }
 
@@ -366,7 +366,7 @@ class MainViewController: UIViewController {
     private func setupUI() {
         view.backgroundColor = .systemGroupedBackground
         title = "RTMPCamera"
-        navigationItem.rightBarButtonItem = UIBarButtonItem(title: "Reset", style: .plain, target: self, action: #selector(resetAll))
+        navigationItem.rightBarButtonItem = UIBarButtonItem(title: "还原设置", style: .plain, target: self, action: #selector(resetAll))
 
         let w = view.bounds.width - 32
         var y: CGFloat = 8
@@ -384,10 +384,10 @@ class MainViewController: UIViewController {
         statusIndicator.backgroundColor = .systemGreen; statusIndicator.layer.cornerRadius = 5
         statusCard.addSubview(statusIndicator)
         statusTitleLabel.frame = CGRect(x: 26, y: 8, width: 200, height: 16)
-        statusTitleLabel.text = "Status"; statusTitleLabel.font = .boldSystemFont(ofSize: 13)
+        statusTitleLabel.text = "运行状态"; statusTitleLabel.font = .boldSystemFont(ofSize: 13)
         statusCard.addSubview(statusTitleLabel)
         statusLabel.frame = CGRect(x: 26, y: 28, width: 280, height: 14)
-        statusLabel.text = "Current: Real Camera"; statusLabel.font = .systemFont(ofSize: 11)
+        statusLabel.text = "当前: 真实摄像头"; statusLabel.font = .systemFont(ofSize: 11)
         statusLabel.textColor = .secondaryLabel; statusCard.addSubview(statusLabel)
         versionLabel.frame = CGRect(x: w - 100, y: 22, width: 90, height: 14)
         versionLabel.text = "v\(appVersion)"; versionLabel.font = .systemFont(ofSize: 10)
@@ -398,19 +398,19 @@ class MainViewController: UIViewController {
         setupCard(sourceCard, at: &y, w: w, h: 54)
         contentView.addSubview(sourceCard)
         let st = UILabel(frame: CGRect(x: 10, y: 6, width: 200, height: 16))
-        st.text = "Video Source"; st.font = .boldSystemFont(ofSize: 13)
+        st.text = "视频源选择"; st.font = .boldSystemFont(ofSize: 13)
         sourceCard.addSubview(st)
         let bw: CGFloat = (w - 24) / 3
         realCameraBtn.frame = CGRect(x: 12, y: 26, width: bw, height: 22)
-        realCameraBtn.setTitle("Real Cam", for: .normal); realCameraBtn.titleLabel?.font = .systemFont(ofSize: 11)
+        realCameraBtn.setTitle("📷 真实", for: .normal); realCameraBtn.titleLabel?.font = .systemFont(ofSize: 11)
         realCameraBtn.addTarget(self, action: #selector(sourceSelected), for: .touchUpInside)
         sourceCard.addSubview(realCameraBtn)
         rtmpBtn.frame = CGRect(x: 14 + bw, y: 26, width: bw, height: 22)
-        rtmpBtn.setTitle("RTMP", for: .normal); rtmpBtn.titleLabel?.font = .systemFont(ofSize: 11)
+        rtmpBtn.setTitle("📡 RTMP", for: .normal); rtmpBtn.titleLabel?.font = .systemFont(ofSize: 11)
         rtmpBtn.addTarget(self, action: #selector(sourceSelected), for: .touchUpInside)
         sourceCard.addSubview(rtmpBtn)
         localVideoBtn.frame = CGRect(x: 16 + bw * 2, y: 26, width: bw, height: 22)
-        localVideoBtn.setTitle("Local Video", for: .normal); localVideoBtn.titleLabel?.font = .systemFont(ofSize: 11)
+        localVideoBtn.setTitle("🎬 本地", for: .normal); localVideoBtn.titleLabel?.font = .systemFont(ofSize: 11)
         localVideoBtn.addTarget(self, action: #selector(sourceSelected), for: .touchUpInside)
         sourceCard.addSubview(localVideoBtn)
 
@@ -421,7 +421,7 @@ class MainViewController: UIViewController {
         rtmpURLLabel.font = .systemFont(ofSize: 10); rtmpURLLabel.textColor = .secondaryLabel
         rtmpCard.addSubview(rtmpURLLabel)
         rtmpCopyButton.frame = CGRect(x: w - 68, y: 4, width: 58, height: 22)
-        rtmpCopyButton.setTitle("Copy", for: .normal); rtmpCopyButton.titleLabel?.font = .systemFont(ofSize: 11)
+        rtmpCopyButton.setTitle("复制", for: .normal); rtmpCopyButton.titleLabel?.font = .systemFont(ofSize: 11)
         rtmpCopyButton.addTarget(self, action: #selector(copyRTMP), for: .touchUpInside)
         rtmpCard.addSubview(rtmpCopyButton)
         rtmpHintLabel.frame = CGRect(x: 10, y: 28, width: w - 20, height: 20)
@@ -432,16 +432,16 @@ class MainViewController: UIViewController {
         setupCard(localVideoCard, at: &y, w: w, h: 56); localVideoCard.isHidden = true
         contentView.addSubview(localVideoCard)
         let ll = UILabel(frame: CGRect(x: 10, y: 8, width: 80, height: 20))
-        ll.text = "Loop Play"; ll.font = .systemFont(ofSize: 12)
+        ll.text = "循环播放"; ll.font = .systemFont(ofSize: 12)
         localVideoCard.addSubview(ll)
         loopSwitch.frame = CGRect(x: 85, y: 5, width: 51, height: 26)
         localVideoCard.addSubview(loopSwitch)
         selectVideoButton.frame = CGRect(x: 140, y: 4, width: 100, height: 26)
-        selectVideoButton.setTitle("Select Video...", for: .normal); selectVideoButton.titleLabel?.font = .systemFont(ofSize: 11)
+        selectVideoButton.setTitle("选择视频...", for: .normal); selectVideoButton.titleLabel?.font = .systemFont(ofSize: 11)
         selectVideoButton.addTarget(self, action: #selector(selectVideo), for: .touchUpInside)
         localVideoCard.addSubview(selectVideoButton)
         localVideoPathLabel.frame = CGRect(x: 10, y: 32, width: w - 20, height: 16)
-        localVideoPathLabel.text = "Not selected"; localVideoPathLabel.font = .systemFont(ofSize: 10)
+        localVideoPathLabel.text = "未选择"; localVideoPathLabel.font = .systemFont(ofSize: 10)
         localVideoPathLabel.textColor = .secondaryLabel
         localVideoCard.addSubview(localVideoPathLabel)
 
@@ -449,7 +449,7 @@ class MainViewController: UIViewController {
         setupCard(injectionCard, at: &y, w: w, h: 56)
         contentView.addSubview(injectionCard)
         let it = UILabel(frame: CGRect(x: 10, y: 6, width: 200, height: 16))
-        it.text = "Injection Control"; it.font = .boldSystemFont(ofSize: 13)
+        it.text = "注入控制"; it.font = .boldSystemFont(ofSize: 13)
         injectionCard.addSubview(it)
         let vl = UILabel(frame: CGRect(x: 10, y: 28, width: 64, height: 22))
         vl.text = "Video"; vl.font = .systemFont(ofSize: 12)
@@ -471,13 +471,13 @@ class MainViewController: UIViewController {
         // Buttons
         y += 4
         floatBtn.frame = CGRect(x: 16, y: y, width: (w - 8) / 2, height: 42)
-        floatBtn.setTitle("Float: OFF", for: .normal); floatBtn.backgroundColor = .systemGray
+        floatBtn.setTitle("悬浮窗:关", for: .normal); floatBtn.backgroundColor = .systemGray
         floatBtn.setTitleColor(.white, for: .normal); floatBtn.layer.cornerRadius = 10
         floatBtn.titleLabel?.font = .boldSystemFont(ofSize: 13)
         floatBtn.addTarget(self, action: #selector(toggleFloatingWindow), for: .touchUpInside)
         contentView.addSubview(floatBtn)
         applyButton.frame = CGRect(x: (w - 8) / 2 + 24, y: y, width: (w - 8) / 2, height: 42)
-        applyButton.setTitle("Apply", for: .normal); applyButton.backgroundColor = .systemBlue
+        applyButton.setTitle("应用设置", for: .normal); applyButton.backgroundColor = .systemBlue
         applyButton.setTitleColor(.white, for: .normal); applyButton.layer.cornerRadius = 10
         applyButton.titleLabel?.font = .boldSystemFont(ofSize: 13)
         applyButton.addTarget(self, action: #selector(applySettings), for: .touchUpInside)
@@ -488,14 +488,14 @@ class MainViewController: UIViewController {
         setupCard(logCard, at: &y, w: w, h: 200)
         contentView.addSubview(logCard)
         let lt = UILabel(frame: CGRect(x: 10, y: 6, width: 100, height: 18))
-        lt.text = "Log"; lt.font = .boldSystemFont(ofSize: 13)
+        lt.text = "运行日志"; lt.font = .boldSystemFont(ofSize: 13)
         logCard.addSubview(lt)
         clearLogBtn.frame = CGRect(x: w - 110, y: 4, width: 44, height: 22)
-        clearLogBtn.setTitle("Clear", for: .normal); clearLogBtn.titleLabel?.font = .systemFont(ofSize: 11)
+        clearLogBtn.setTitle("清空", for: .normal); clearLogBtn.titleLabel?.font = .systemFont(ofSize: 11)
         clearLogBtn.addTarget(self, action: #selector(clearLog), for: .touchUpInside)
         logCard.addSubview(clearLogBtn)
         copyLogBtn.frame = CGRect(x: w - 60, y: 4, width: 50, height: 22)
-        copyLogBtn.setTitle("Copy", for: .normal); copyLogBtn.titleLabel?.font = .boldSystemFont(ofSize: 11)
+        copyLogBtn.setTitle("复制", for: .normal); copyLogBtn.titleLabel?.font = .boldSystemFont(ofSize: 11)
         copyLogBtn.setTitleColor(.systemBlue, for: .normal)
         copyLogBtn.addTarget(self, action: #selector(copyLog), for: .touchUpInside)
         logCard.addSubview(copyLogBtn)
@@ -519,7 +519,7 @@ class MainViewController: UIViewController {
     }
 
     @objc private func copyRTMP() {
-        UIPasteboard.general.string = rtmpURL; addLog("RTMP URL copied")
+        UIPasteboard.general.string = rtmpURL; addLog("RTMP地址已复制")
     }
 
     private func updateSourceButtons() {
@@ -544,9 +544,9 @@ extension MainViewController: UIDocumentPickerDelegate {
         let a = url.startAccessingSecurityScopedResource()
         defer { if a { url.stopAccessingSecurityScopedResource() } }
         localVideoPath = url.path
-        localVideoPathLabel.text = "OK \(url.lastPathComponent)"
+        localVideoPathLabel.text = "✅ \(url.lastPathComponent)"
         localVideoPathLabel.textColor = .label
-        addLog("Selected: \(url.lastPathComponent)")
+        addLog("已选择: \(url.lastPathComponent)")
     }
 }
 
@@ -571,7 +571,7 @@ class FloatingWindowManager: NSObject {
         floatWindow?.layer.shadowOffset = CGSize(width: 0, height: 2); floatWindow?.layer.shadowRadius = 8
         floatWindow?.windowLevel = .alert + 1
         let btn = UIButton(frame: floatWindow!.bounds)
-        btn.setTitle("Cam", for: .normal); btn.titleLabel?.font = .systemFont(ofSize: 30)
+        btn.setTitle("📷", for: .normal); btn.titleLabel?.font = .systemFont(ofSize: 30)
         btn.addTarget(self, action: #selector(floatTapped), for: .touchUpInside)
         floatWindow?.addSubview(btn)
         let pan = UIPanGestureRecognizer(target: self, action: #selector(floatPanned(_:)))
@@ -583,11 +583,11 @@ class FloatingWindowManager: NSObject {
 
     @objc private func floatTapped() {
         guard let vc = parentVC else { return }
-        let alert = UIAlertController(title: "Quick Switch", message: nil, preferredStyle: .actionSheet)
+        let alert = UIAlertController(title: "快速切换", message: nil, preferredStyle: .actionSheet)
         alert.addAction(UIAlertAction(title: "Real Camera", style: .default) { _ in vc.realCameraBtn.sendActions(for: .touchUpInside); vc.applySettings() })
         alert.addAction(UIAlertAction(title: "Local Video", style: .default) { _ in vc.localVideoBtn.sendActions(for: .touchUpInside); vc.applySettings() })
-        alert.addAction(UIAlertAction(title: "Hide Float", style: .destructive) { [weak self] _ in self?.hide() })
-        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+        alert.addAction(UIAlertAction(title: "隐藏悬浮窗", style: .destructive) { [weak self] _ in self?.hide() })
+        alert.addAction(UIAlertAction(title: "取消", style: .cancel))
         vc.present(alert, animated: true)
     }
 
