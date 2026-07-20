@@ -143,7 +143,7 @@ class MainViewController: UIViewController {
             guard ptr != MAP_FAILED else { return }
             defer { munmap(ptr, size) }
 
-            let logBuf = ptr.bindMemory(to: SharedLogBuffer.self, capacity: 1)
+            let logBuf = ptr!.bindMemory(to: SharedLogBuffer.self, capacity: 1)
             let total = Int(logBuf.pointee.totalCount)
             let start = max(0, total - 20)
             for i in start..<total {
@@ -386,7 +386,7 @@ class MainViewController: UIViewController {
         let layer = AVCaptureVideoPreviewLayer(session: session)
         layer.videoGravity = .resizeAspectFill
         layer.frame = previewView.bounds
-        layer.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        previewView.autoresizingMask = [.flexibleWidth, .flexibleHeight]; layer.frame = previewView.bounds
         previewView.layer.insertSublayer(layer, at: 0)
         previewLayer = layer
         DispatchQueue.global(qos: .userInitiated).async { session.startRunning() }
@@ -477,7 +477,7 @@ class MainViewController: UIViewController {
         }
     }
 
-    @objc private func applySettings() {
+    @objc func applySettings() {
         switch currentSource {
         case .realCamera: statusLabel.text = "当前: 真实摄像头 | 守护进程: 运行中"; statusIndicator.backgroundColor = .systemGreen
         case .rtmpStream: statusLabel.text = "当前: RTMP流 | 守护进程: 运行中"; statusIndicator.backgroundColor = .systemBlue
@@ -503,7 +503,7 @@ class MainViewController: UIViewController {
             let ptr = mmap(nil, size, PROT_READ | PROT_WRITE, MAP_SHARED, controlFD, 0)
             guard ptr != MAP_FAILED else { return }
             defer { munmap(ptr, size) }
-            let ctrl = ptr.bindMemory(to: SharedControlData.self, capacity: 1)
+            let ctrl = ptr!.bindMemory(to: SharedControlData.self, capacity: 1)
             ctrl.pointee.command = 1
             ctrl.pointee.sourceType = UInt32(self.currentSource.rawValue)
             ctrl.pointee.videoInjectionEnabled = self.videoInjectionOn ? 1 : 0
