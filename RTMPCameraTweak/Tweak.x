@@ -60,7 +60,7 @@ static BOOL isVideoInjectionEnabled(void) {
 }
 
 // 检查音频注入是否启用
-static BOOL isAudioInjectionEnabled(void) {
+static BOOL __attribute__((unused)) isAudioInjectionEnabled(void) {
     if (g_sharedMemory == NULL) return NO;
     if (g_sharedMemory->frameHeader.magic != 0x524D5046) return NO;
     return g_sharedMemory->frameHeader.audioInjectionEnabled != 0;
