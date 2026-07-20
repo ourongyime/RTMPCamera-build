@@ -507,12 +507,10 @@ class MainViewController: UIViewController {
 
 
     private func ensureDaemonRunning() -> Bool {
-        let task = Process()
-        task.launchPath = "/bin/bash"
-        task.arguments = ["-c", "if [ -d /var/jb ]; then PREFIX=/var/jb; else PREFIX=; fi; launchctl load \"$PREFIX/Library/LaunchDaemons/com.rtmpcamera.daemon.plist\" 2>&1 || true"]
-        task.launch()
-        task.waitUntilExit()
-        return task.terminationStatus == 0
+        // iOS 不支持 Process，使用 system() 调用
+        let cmd = "if [ -d /var/jb ]; then PREFIX=/var/jb; else PREFIX=; fi; launchctl load \"$PREFIX/Library/LaunchDaemons/com.rtmpcamera.daemon.plist\" 2>/dev/null"
+        let result = system(cmd)
+        return result == 0
     }
 
     private func sendControlCommand() {
