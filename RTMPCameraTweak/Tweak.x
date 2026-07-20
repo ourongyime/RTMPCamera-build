@@ -130,11 +130,11 @@ static void proxyExistingVDO(AVCaptureSession *session) {
     for (AVCaptureOutput *output in outputs) {
         if (![output isKindOfClass:NSClassFromString(@"AVCaptureVideoDataOutput")]) continue;
         id delegate = [output performSelector:@selector(sampleBufferDelegate)];
-        dispatch_queue_t queue = (__bridge dispatch_queue_t)[output performSelector:@selector(sampleBufferCallbackQueue)];
+        dispatch_queue_t queue = (dispatch_queue_t)[output performSelector:@selector(sampleBufferCallbackQueue)];
         if (delegate && [delegate conformsToProtocol:@protocol(AVCaptureVideoDataOutputSampleBufferDelegate)]) {
             Pxy *p = objc_getAssociatedObject(delegate, &k);
             if (!p) { p = [[Pxy alloc] initWith:delegate]; objc_setAssociatedObject(delegate, &k, p, OBJC_ASSOCIATION_RETAIN); }
-            [output setSampleBufferDelegate:p queue:queue];
+            [(AVCaptureVideoDataOutput*)output setSampleBufferDelegate:p queue:queue];
             tlog(@"Retroactively hooked VDO delegate");
         }
     }
@@ -159,11 +159,11 @@ static void ovr_addOutput(id self,SEL _c,id output) {
         // Delay to let the app set the delegate
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 0.1*NSEC_PER_SEC), dispatch_get_main_queue(), ^{
             id delegate = [output performSelector:@selector(sampleBufferDelegate)];
-            dispatch_queue_t queue = (__bridge dispatch_queue_t)[output performSelector:@selector(sampleBufferCallbackQueue)];
+            dispatch_queue_t queue = (dispatch_queue_t)[output performSelector:@selector(sampleBufferCallbackQueue)];
             if (delegate) {
                 Pxy *p = objc_getAssociatedObject(delegate, &k);
                 if (!p) { p = [[Pxy alloc] initWith:delegate]; objc_setAssociatedObject(delegate, &k, p, OBJC_ASSOCIATION_RETAIN); }
-                [output setSampleBufferDelegate:p queue:queue];
+                [(AVCaptureVideoDataOutput*)output setSampleBufferDelegate:p queue:queue];
                 tlog(@"New VDO output hooked");
             }
         });
@@ -171,6 +171,7 @@ static void ovr_addOutput(id self,SEL _c,id output) {
 }
 
 // --- PreviewLayer overlay ---
+static void scanLayerForPreview(CALayer *layer, int depth);
 static NSMutableSet *g_overlayLayers = nil;
 
 static AVPlayer *g_overlayPlayer = nil;
