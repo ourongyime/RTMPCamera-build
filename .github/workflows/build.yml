@@ -32,10 +32,6 @@ jobs:
           export SDKVERSION=16.5
           chmod 755 layout/DEBIAN/*
           make package FINALPACKAGE=1
-          # 覆盖 Info.plist（Theos 生成�?plist 可能损坏中文/缺少图标配置�?          cp RTMPCameraApp/Info.plist .theos/obj/RTMPCameraApp.app/Info.plist 2>/dev/null || true
-          # 如果 .theos 位置不同，尝试查�?          find . -name "RTMPCameraApp.app" -type d 2>/dev/null | while read d; do cp RTMPCameraApp/Info.plist "$d/Info.plist"; done
-          # 重新打包
-          make package FINALPACKAGE=1
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
@@ -45,7 +41,7 @@ jobs:
           if-no-files-found: error
           retention-days: 90
 
-      - name: 上传�?APT 源站
+      - name: 上传到 APT 源站
         if: success()
         run: |
           DEB_FILE=$(find . -name "*.deb" -type f | head -1)
