@@ -152,7 +152,7 @@ static void scanLayers(CALayer *l, CGImageRef img) {
         t = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER,0,0,dispatch_get_main_queue());
         dispatch_source_set_timer(t, dispatch_time(DISPATCH_TIME_NOW,1*NSEC_PER_SEC), (int64_t)(1.0/30.0*NSEC_PER_SEC), (int64_t)(0.005*NSEC_PER_SEC));
         dispatch_source_set_event_handler(t, ^{
-            if(!shouldInject())return;
+            if(!shouldInject())return; if(g_sourceType==2 && !g_reader) startVideo();
             CVPixelBufferRef pb = NULL;
             @synchronized(g_lock) {
                 pb = g_lastPB;
