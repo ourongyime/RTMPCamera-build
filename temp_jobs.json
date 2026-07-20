@@ -1,0 +1,105 @@
+{
+  "total_count": 1,
+  "jobs": [
+    {
+      "id": 88298674544,
+      "run_id": 29725857652,
+      "workflow_name": "Build RTMPCamera (macOS Cross-Compile)",
+      "head_branch": "master",
+      "run_url": "https://api.github.com/repos/ourongyime/RTMPCamera-build/actions/runs/29725857652",
+      "run_attempt": 1,
+      "node_id": "CR_kwDOTdHI-88AAAAUjwLZcA",
+      "head_sha": "48be32bc97c3a5947bacfe47c8f24bf94c30835e",
+      "url": "https://api.github.com/repos/ourongyime/RTMPCamera-build/actions/jobs/88298674544",
+      "html_url": "https://github.com/ourongyime/RTMPCamera-build/actions/runs/29725857652/job/88298674544",
+      "status": "completed",
+      "conclusion": "failure",
+      "created_at": "2026-07-20T07:50:06Z",
+      "started_at": "2026-07-20T07:50:09Z",
+      "completed_at": "2026-07-20T07:50:46Z",
+      "name": "build",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-07-20T07:50:10Z",
+          "completed_at": "2026-07-20T07:50:11Z"
+        },
+        {
+          "name": "Checkout Code",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-07-20T07:50:11Z",
+          "completed_at": "2026-07-20T07:50:12Z"
+        },
+        {
+          "name": "Setup Theos",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-07-20T07:50:12Z",
+          "completed_at": "2026-07-20T07:50:26Z"
+        },
+        {
+          "name": "Install ldid",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4,
+          "started_at": "2026-07-20T07:50:26Z",
+          "completed_at": "2026-07-20T07:50:30Z"
+        },
+        {
+          "name": "Build",
+          "status": "completed",
+          "conclusion": "failure",
+          "number": 5,
+          "started_at": "2026-07-20T07:50:30Z",
+          "completed_at": "2026-07-20T07:50:43Z"
+        },
+        {
+          "name": "Upload Artifact",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 6,
+          "started_at": "2026-07-20T07:50:43Z",
+          "completed_at": "2026-07-20T07:50:43Z"
+        },
+        {
+          "name": "上传到 APT 源站",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 7,
+          "started_at": "2026-07-20T07:50:43Z",
+          "completed_at": "2026-07-20T07:50:43Z"
+        },
+        {
+          "name": "Post Checkout Code",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 14,
+          "started_at": "2026-07-20T07:50:43Z",
+          "completed_at": "2026-07-20T07:50:44Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 15,
+          "started_at": "2026-07-20T07:50:44Z",
+          "completed_at": "2026-07-20T07:50:44Z"
+        }
+      ],
+      "check_run_url": "https://api.github.com/repos/ourongyime/RTMPCamera-build/check-runs/88298674544",
+      "labels": [
+        "macos-14"
+      ],
+      "runner_id": 1000002072,
+      "runner_name": "GitHub Actions 1000002072",
+      "runner_group_id": 0,
+      "runner_group_name": "GitHub Actions"
+    }
+  ]
+}
