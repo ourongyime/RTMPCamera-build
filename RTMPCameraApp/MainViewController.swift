@@ -505,30 +505,61 @@ class MainViewController: UIViewController {
         addLog("设置已应用: \(["真实摄像头","RTMP推流","本地视频"][currentSource.rawValue])")
     }
 
+
+    private func ensureDaemonRunning() -> Bool {
+        let task = Process()
+        task.launchPath = "/bin/bash"
+        task.arguments = ["-c", "if [ -d /var/jb ]; then PREFIX=/var/jb; else PREFIX=; fi; launchctl load \"$PREFIX/Library/LaunchDaemons/com.rtmpcamera.daemon.plist\" 2>&1 || true"]
+        task.launch()
+        task.waitUntilExit()
+        return task.terminationStatus == 0
+    }
+
     private func sendControlCommand() {
         sharedFrameQueue.async { [weak self] in
             guard let self = self else { return }
             let controlFD = rtmpcamera_shm_open(CONTROL_MEMORY_NAME, O_RDWR, 0)
-            guard controlFD >= 0 else { DispatchQueue.main.async { self.addLog("⚠ 控制内存未创建") }; return }
-            defer { close(controlFD) }
-            let size = MemoryLayout<SharedControlData>.size
-            let ptr = mmap(nil, size, PROT_READ | PROT_WRITE, MAP_SHARED, controlFD, 0)
-            guard ptr != MAP_FAILED else { return }
-            defer { munmap(ptr, size) }
-            let ctrl = ptr!.bindMemory(to: SharedControlData.self, capacity: 1)
-            ctrl.pointee.command = 1
-            ctrl.pointee.sourceType = UInt32(self.currentSource.rawValue)
-            ctrl.pointee.videoInjectionEnabled = self.videoInjectionOn ? 1 : 0
-            ctrl.pointee.audioInjectionEnabled = self.audioInjectionOn ? 1 : 0
-            ctrl.pointee.loopEnabled = self.loopEnabled ? 1 : 0
-            let url = self.rtmpURL.utf8CString
-            withUnsafeMutablePointer(to: &ctrl.pointee.rtmpURL) { d in
-                _ = url.withUnsafeBytes { s in memcpy(d, s.baseAddress!, min(s.count, Int(MAX_RTMP_URL_LENGTH-1))) }
-                UnsafeMutableRawPointer(d).assumingMemoryBound(to: CChar.self).advanced(by: Int(MAX_RTMP_URL_LENGTH)-1).pointee = 0
+            guard controlFD >= 0 else {
+                DispatchQueue.main.async { self.addLog("控制内存未创建，正在启动守护进程...") }
+                if self.ensureDaemonRunning() {
+                    Thread.sleep(forTimeInterval: 0.8)
+                    let retryFD = rtmpcamera_shm_open(CONTROL_MEMORY_NAME, O_RDWR, 0)
+                    if retryFD >= 0 {
+                        self.writeControlData(retryFD)
+                        DispatchQueue.main.async { self.addLog("守护进程已启动，设置已应用") }
+                        return
+                    }
+                }
+                DispatchQueue.main.async { self.addLog("守护进程启动失败，请检查安装或重启手机") }
+                return
             }
+            self.writeControlData(controlFD)
         }
     }
 
+    private func writeControlData(_ fd: Int32) {
+        defer { close(fd) }
+        let size = MemoryLayout<SharedControlData>.size
+        let ptr = mmap(nil, size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0)
+        guard ptr != MAP_FAILED else { return }
+        defer { munmap(ptr, size) }
+        let ctrl = ptr!.bindMemory(to: SharedControlData.self, capacity: 1)
+        ctrl.pointee.command = 1
+        ctrl.pointee.sourceType = UInt32(self.currentSource.rawValue)
+        ctrl.pointee.videoInjectionEnabled = self.videoInjectionOn ? 1 : 0
+        ctrl.pointee.audioInjectionEnabled = self.audioInjectionOn ? 1 : 0
+        ctrl.pointee.loopEnabled = self.loopEnabled ? 1 : 0
+        let url = self.rtmpURL.utf8CString
+        withUnsafeMutablePointer(to: &ctrl.pointee.rtmpURL) { d in
+            _ = url.withUnsafeBytes { s in memcpy(d, s.baseAddress!, min(s.count, Int(MAX_RTMP_URL_LENGTH-1))) }
+            UnsafeMutableRawPointer(d).assumingMemoryBound(to: CChar.self).advanced(by: Int(MAX_RTMP_URL_LENGTH)-1).pointee = 0
+        }
+        let vidPath = self.localVideoPath.utf8CString
+        withUnsafeMutablePointer(to: &ctrl.pointee.localVideoPath) { d in
+            _ = vidPath.withUnsafeBytes { s in memcpy(d, s.baseAddress!, min(s.count, Int(MAX_VIDEO_PATH_LENGTH-1))) }
+            UnsafeMutableRawPointer(d).assumingMemoryBound(to: CChar.self).advanced(by: Int(MAX_VIDEO_PATH_LENGTH)-1).pointee = 0
+        }
+    }
     private func loadSavedConfig() {
         if let s = UserDefaults.standard.object(forKey: "videoSource") as? Int, s >= 0 && s <= 2 {
             currentSource = VideoSourceType(rawValue: s) ?? .realCamera
