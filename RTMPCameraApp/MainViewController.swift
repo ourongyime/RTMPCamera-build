@@ -148,7 +148,7 @@ class MainViewController: UIViewController {
             let start = max(0, total - 20)
             for i in start..<total {
                 let idx = i % Int(MAX_LOG_ENTRIES)
-                let msg = String(cString: logBuf.pointee.entries[idx].message)
+                let entriesBase = withUnsafePointer(to: &logBuf.pointee.entries) { UnsafeRawPointer(let msg = String(cString: logBuf.pointee.entries[idx].message)).assumingMemoryBound(to: SharedLogBuffer.LogEntry.self) }; let msg = String(cString: entriesBase[idx].message)
                 if !msg.isEmpty {
                     let src = ["Daemon","Tweak","App"][Int(logBuf.pointee.entries[idx].source) % 3]
                     DispatchQueue.main.async { self.addLog("[\(src)] \(msg)") }
@@ -512,7 +512,7 @@ class MainViewController: UIViewController {
             let url = self.rtmpURL.utf8CString
             withUnsafeMutablePointer(to: &ctrl.pointee.rtmpURL) { d in
                 _ = url.withUnsafeBytes { s in memcpy(d, s.baseAddress!, min(s.count, Int(MAX_RTMP_URL_LENGTH-1))) }
-                d.advanced(by: Int(MAX_RTMP_URL_LENGTH)-1).pointee = 0
+                UnsafeMutableRawPointer(d).assumingMemoryBound(to: CChar.self).advanced(by: Int(MAX_RTMP_URL_LENGTH)-1).pointee = 0
             }
         }
     }
