@@ -19,7 +19,7 @@ class MainViewController: UIViewController {
     private let applyButton = UIButton(type: .system)
     private var currentSource: VideoSourceType = .realCamera; private var rtmpURL = ""; private var localVideoPath = ""
     private var videoInjectionOn = true; private var audioInjectionOn = false; private var loopEnabled = true; private var phoneIP = ""
-    private var logLines: [String] = []; private let defaultRTMPPort = 1935; private let appVersion = "1.0.34"
+    private var logLines: [String] = []; private let defaultRTMPPort = 1935; private let appVersion = "1.0.35"
     private let tweakDir = "/var/mobile/Documents/rtmpcamera"; private let tweakCfgFile = "/var/mobile/Documents/rtmpcamera/config.plist"
     private let tweakVideoFile = "/var/mobile/Documents/rtmpcamera/current_video.mp4"
     private let tweakLoadedFile = "/var/mobile/Documents/rtmpcamera/tweak_loaded"; private let tweakLogFile = "/var/mobile/Documents/rtmpcamera/tweak.log"
@@ -238,7 +238,7 @@ class FloatingWindowManager: NSObject {
     var isShowingWindow: Bool { isShowing }
     func show(with vc: MainViewController) {
         guard !isShowing else { return }; parentVC = vc; isShowing = true; let size: CGFloat = 76
-        let scene = UIApplication.shared.connectedScenes.compactMap({  as? UIWindowScene }).first
+        let scene = UIApplication.shared.connectedScenes.compactMap({ compactMap({  as? UIWindowScene }) as? UIWindowScene }).first
         floatWindow = scene != nil ? UIWindow(windowScene: scene!) : UIWindow(frame: UIScreen.main.bounds)
         floatWindow?.frame = CGRect(x: UIScreen.main.bounds.width - size - 14, y: 180, width: size, height: size)
         floatWindow?.backgroundColor = UIColor.systemBlue.withAlphaComponent(0.88); floatWindow?.layer.cornerRadius = size/2
