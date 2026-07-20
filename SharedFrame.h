@@ -91,6 +91,9 @@ typedef struct {
 #endif
 
 // Swift 兼容: shm_open wrapper (因 Swift 不支持可变参数函数)
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 static inline int rtmpcamera_shm_open(const char *name, int oflag, mode_t mode) {
     return shm_open(name, oflag, mode);
 }
