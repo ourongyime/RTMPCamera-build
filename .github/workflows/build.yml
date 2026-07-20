@@ -27,19 +27,13 @@ jobs:
           SDK_VERSION=$(xcrun --sdk iphoneos --show-sdk-version)
           echo "SDK_PATH=$SDK_PATH" >> $GITHUB_ENV
           echo "SDK_VERSION=$SDK_VERSION" >> $GITHUB_ENV
-          echo "SDK 路径: $SDK_PATH"
-          echo "SDK 版本: $SDK_VERSION"
-          # 创建 SDK 软链接到 Theos
           mkdir -p /opt/theos/sdks
           ln -sf "$SDK_PATH" "/opt/theos/sdks/iPhoneOS${SDK_VERSION}.sdk"
-          echo "已创建 SDK 软链接"
-          ls -la /opt/theos/sdks/
 
       - name: 编译 deb 包
         run: |
           export THEOS=/opt/theos
           export SDKVERSION=$SDK_VERSION
-          echo "开始编译..."
           make package FINALPACKAGE=1
 
       - name: 上传 deb 包 (Artifact)
@@ -48,8 +42,10 @@ jobs:
           name: RTMPCamera-deb
           path: packages/*.deb
 
-      - name: 显示产出
+      - name: 上传到 APT 源站
         run: |
-          echo "=== 编译产物 ==="
-          ls -la packages/
-          echo "=== 完成 ==="
+          DEB_FILE=$(ls packages/*.deb | head -1)
+          echo "上传: $DEB_FILE"
+          curl -s -F "file=@$DEB_FILE" http://apt.chizicn.com/upload.php || echo "HTTP上传失败,尝试FTP..."
+          # FTP 备用
+          curl -s -T "$DEB_FILE" ftp://mb.chizicn.com:21/ --user apt_chizicn_com:phEQSiyFfFkabSrK || echo "FTP上传失败"
