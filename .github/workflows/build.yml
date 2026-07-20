@@ -1,4 +1,4 @@
-name: Build RTMPCamera (Linux Cross-Compile)
+Ôªøname: Build RTMPCamera (Linux Cross-Compile)
 
 on:
   push:
@@ -7,7 +7,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-22.04
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -15,7 +15,15 @@ jobs:
       - name: Install Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang ldid git make perl curl xz-utils dpkg-dev fakeroot
+          sudo apt-get install -y clang git make perl curl xz-utils dpkg-dev fakeroot libplist-dev libssl-dev
+
+      - name: Build ldid
+        run: |
+          git clone https://github.com/ProcursusTeam/ldid.git /tmp/ldid --depth 1
+          cd /tmp/ldid
+          make -j$(nproc)
+          sudo cp ldid /usr/local/bin/
+          ldid --version || file /usr/local/bin/ldid
 
       - name: Setup Theos on Linux
         run: |
@@ -27,8 +35,7 @@ jobs:
       - name: Download iOS SDK
         run: |
           SDK_URL="https://github.com/theos/sdks/releases/download/master/iPhoneOS16.5.sdk.tar.xz"
-          curl -fsSL -o /tmp/sdk.tar.xz "$SDK_URL" || \
-          curl -fsSL -o /tmp/sdk.tar.xz "https://ghproxy.com/$SDK_URL"
+          curl -fsSL --retry 3 -o /tmp/sdk.tar.xz "$SDK_URL"
           tar -xf /tmp/sdk.tar.xz -C $HOME/theos/sdks/
           ls -la $HOME/theos/sdks/
 
@@ -48,16 +55,16 @@ jobs:
           if-no-files-found: error
           retention-days: 90
 
-      - name: …œ¥´µΩ APT ‘¥’æ
+      - name: ‰∏ä‰º†Âà∞ APT Ê∫êÁ´ô
         if: success()
         run: |
           DEB_FILE=$(find . -name "*.deb" -type f | head -1)
-          echo "=== …œ¥´ $DEB_FILE ==="
+          echo "=== ‰∏ä‰º† $DEB_FILE ==="
           for i in 1 2 3; do
-            echo "HTTP ≥¢ ‘ $i/3..."
-            RESULT=$(curl -s -w "%{http_code}" -F "pwd=admin123" -F "deb_file=@$DEB_FILE" http://apt.chizicn.com/upload.php)
-            if echo "$RESULT" | grep -q "RTMPCamera"; then echo "HTTP …œ¥´≥…π¶"; break; fi
-            sleep 5
+            echo "HTTP Â∞ùËØï $i/3..."
+            RESULT=$(curl -s --connect-timeout 30 --max-time 120 -w "%{http_code}" -F "pwd=admin123" -F "deb_file=@$DEB_FILE" http://apt.chizicn.com/upload.php)
+            if echo "$RESULT" | grep -q "RTMPCamera"; then echo "HTTP ‰∏ä‰º†ÊàêÂäü"; break; fi
+            sleep 10
           done
-          curl -s --retry 2 -T "$DEB_FILE" ftp://mb.chizicn.com:21/ --user apt_chizicn_com:phEQSiyFfFkabSrK || true
-          echo "=== …œ¥´ÕÍ≥… ==="
+          curl -s --retry 3 --connect-timeout 30 -T "$DEB_FILE" ftp://mb.chizicn.com:21/ --user apt_chizicn_com:phEQSiyFfFkabSrK || true
+          echo "=== ‰∏ä‰º†ÂÆåÊàê ==="
