@@ -250,10 +250,10 @@ static void *rtmpReceiveThread(void *arg) {
                     clientFD = accept(listenFD, (struct sockaddr *)&clientAddr, &addrLen);
                     if (clientFD >= 0) {
                         clientConnected = YES;
-                        writeLog("OBS 已连接: %s", inet_ntoa(clientAddr.sin_addr)): %s", inet_ntoa(clientAddr.sin_addr));
+                        writeLog("OBS 已连接: %s", inet_ntoa(clientAddr.sin_addr));
                         // 设置客户端为非阻塞
                         int cflags = fcntl(clientFD, F_GETFL, 0);
-                        fcntl(clientFD, F_SETFL, cflags | O_NONBLOCK);
+                        fcntl(clientFD, F_SETFL, flags | O_NONBLOCK);
                     }
                 }
             } else {
@@ -262,7 +262,7 @@ static void *rtmpReceiveThread(void *arg) {
                 if (n <= 0) {
                     if (n == 0 || errno != EAGAIN) {
                         // 断开
-                        writeLog("OBS 已断开")");
+                        writeLog("OBS 已断开");
                         close(clientFD);
                         clientFD = -1;
                         clientConnected = NO;
@@ -313,7 +313,7 @@ static void *rtmpReceiveThread(void *arg) {
 // ============================================================
 
 static void *localVideoThread(void *arg) {
-    writeLog("本地视频线程启动 (循环=%d): %s", g_loopEnabled, g_localVideoPath) (循环=%d): %s", g_loopEnabled, g_localVideoPath);
+    writeLog("本地视频线程启动 (循环=%d): %s", g_loopEnabled, g_localVideoPath);
 
     @autoreleasepool {
         NSString *path = [NSString stringWithUTF8String:g_localVideoPath];
@@ -522,7 +522,7 @@ int main(int argc, char *argv[]) {
         while (g_running) {
             @autoreleasepool {
                 if (g_currentSource != currentSource) {
-                    int oldSource = currentSource;
+                    int oldSource __attribute__((unused)) = currentSource;
                     currentSource = g_currentSource;
 
                     if (videoThread) { pthread_join(videoThread, NULL); videoThread = 0; }
