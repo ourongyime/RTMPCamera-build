@@ -47,7 +47,7 @@ class MainViewController: UIViewController {
     private var phoneIP = ""
     private var logLines: [String] = []
     private let defaultRTMPPort = 1935
-    private let appVersion = "1.0.66"
+    private let appVersion = "1.0.67"
     private let tweakDir = "/var/mobile/Documents/rtmpcamera"
     private let tweakCfgFile = "/var/mobile/Documents/rtmpcamera/config.plist"
     private let tweakVideoFile = "/var/mobile/Documents/rtmpcamera/current_video.mp4"
