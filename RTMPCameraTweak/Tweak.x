@@ -17,31 +17,39 @@ static void tlog(NSString *s) {
     else { [[NSFileManager defaultManager] createDirectoryAtPath:kDir withIntermediateDirectories:YES attributes:nil error:nil]; [l writeToFile:kLogFile atomically:NO encoding:NSUTF8StringEncoding error:nil]; }
 }
 
+static UIWindow *getSBWindow(void) {
+    for (UIScene *scene in [[UIApplication sharedApplication] connectedScenes]) {
+        if ([scene isKindOfClass:[UIWindowScene class]]) {
+            UIWindowScene *ws = (UIWindowScene *)scene;
+            for (UIWindow *w in ws.windows) {
+                if (w.isKeyWindow) return w;
+            }
+            if (ws.windows.count > 0) return ws.windows.firstObject;
+        }
+    }
+    return nil;
+}
+
 %ctor {
     @autoreleasepool {
         [[NSFileManager defaultManager] createDirectoryAtPath:kDir withIntermediateDirectories:YES attributes:@{NSFilePosixPermissions:@0777} error:nil];
         [[NSData data] writeToFile:kLoadedFlag atomically:NO];
         tlog(@"=== v1.0.57 LOADED ===");
 
-        // Wait 1 second for SpringBoard to fully initialize
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 1 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
-            // Get SpringBoard's key window
-            UIWindow *sbWindow = [[UIApplication sharedApplication] keyWindow];
-            tlog([NSString stringWithFormat:@"SB window: %@ frame=%@ level=%.0f subviews=%lu",
+            UIWindow *sbWindow = getSBWindow();
+            tlog([NSString stringWithFormat:@"SB window: %@ frame=%@ level=%.0f",
                   sbWindow ? @"YES" : @"NO",
                   sbWindow ? NSStringFromCGRect(sbWindow.frame) : @"N/A",
-                  sbWindow ? sbWindow.windowLevel : 0.0,
-                  sbWindow ? (unsigned long)sbWindow.subviews.count : 0]);
+                  sbWindow ? sbWindow.windowLevel : 0.0]);
 
             if (sbWindow) {
-                // Add a red semi-transparent overlay to test visibility
                 UIView *testView = [[UIView alloc] initWithFrame:sbWindow.bounds];
                 testView.backgroundColor = [[UIColor redColor] colorWithAlphaComponent:0.5];
-                testView.tag = 99957; // identifiable tag
+                testView.tag = 99957;
                 
-                // Add a white label in center
                 UILabel *label = [[UILabel alloc] initWithFrame:CGRectMake(0, 0, 300, 50)];
-                label.center = testView.center;
+                label.center = CGPointMake(sbWindow.bounds.size.width/2, sbWindow.bounds.size.height/2);
                 label.text = @"RTMPCamera v1.0.57 TEST";
                 label.textColor = [UIColor whiteColor];
                 label.textAlignment = NSTextAlignmentCenter;
@@ -50,20 +58,14 @@ static void tlog(NSString *s) {
                 
                 [sbWindow addSubview:testView];
                 [sbWindow bringSubviewToFront:testView];
-                tlog(@"RED TEST VIEW ADDED to SB window");
-                
-                // Also list all windows for debugging
-                for (UIWindow *w in [[UIApplication sharedApplication] windows]) {
-                    tlog([NSString stringWithFormat:@"Window: level=%.0f hidden=%d class=%@", w.windowLevel, w.hidden, [w class]]);
-                }
+                tlog(@"RED TEST VIEW ADDED");
             }
         });
     }
 }
 
 %dtor {
-    // Remove test view
-    UIWindow *sbWindow = [[UIApplication sharedApplication] keyWindow];
+    UIWindow *sbWindow = getSBWindow();
     UIView *testView = [sbWindow viewWithTag:99957];
     if (testView) { [testView removeFromSuperview]; tlog(@"Test view removed"); }
     tlog(@"Unloaded");
