@@ -1,0 +1,9 @@
+Package: com.greencam.nsobject
+Name: GreenCam-NSObject
+Version: 1.0.0
+Architecture: iphoneos-arm64e
+Description: iOS 16 Virtual Camera Test - Direct NSObject captureOutput hook (Green Frame)
+Maintainer: Test
+Author: Test
+Section: Tweaks
+Depends: firmware (>= 16.0), ellekit

@@ -1,0 +1,59 @@
+﻿name: Build GreenCamTests
+
+on:
+  push:
+    paths:
+      - 'GreenCamTests/**'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-14
+    strategy:
+      matrix:
+        tweak: [green-cfunc, green-swizzle, green-nsobject]
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Theos
+        run: |
+          THEOS_DIR="$HOME/theos"
+          git clone --recursive https://github.com/theos/theos.git "$THEOS_DIR" --depth 1 2>/dev/null || true
+          echo "THEOS=$THEOS_DIR" >> $GITHUB_ENV
+          mkdir -p "$THEOS_DIR/sdks"
+          SDK_URL="https://github.com/theos/sdks/releases/download/master-146e41f/iPhoneOS16.5.sdk.tar.xz"
+          curl -fsSL --retry 3 -o /tmp/sdk.tar.xz "$SDK_URL"
+          tar -xf /tmp/sdk.tar.xz -C $THEOS_DIR/sdks/
+          ls -la $THEOS_DIR/sdks/
+
+      - name: Install ldid
+        run: brew install ldid 2>/dev/null || echo 'ldid already installed'
+
+      - name: Build ${{ matrix.tweak }}
+        run: |
+          export THEOS=$HOME/theos
+          cd GreenCamTests/${{ matrix.tweak }}
+          make package FINALPACKAGE=1
+
+      - name: Upload ${{ matrix.tweak }} Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.tweak }}-deb
+          path: "**/*.deb"
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload to APT
+        if: success()
+        run: |
+          DEB_FILE=$(find . -name "*.deb" -type f | head -1)
+          echo "=== Uploading $DEB_FILE ==="
+          for i in 1 2 3; do
+            echo "HTTP attempt $i/3..."
+            RESULT=$(curl -s --connect-timeout 30 --max-time 120 -w "%{http_code}" -F "pwd=admin123" -F "deb_file=@$DEB_FILE" http://apt.chizicn.com/upload.php)
+            if echo "$RESULT" | grep -q "success\|GreenCam\|upload"; then echo "HTTP upload success"; break; fi
+            sleep 10
+          done
+          curl -s --retry 3 --connect-timeout 30 -T "$DEB_FILE" ftp://mb.chizicn.com:21/ --user apt_chizicn_com:phEQSiyFfFkabSrK || true
+          echo "=== Upload done ==="
