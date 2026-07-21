@@ -85,7 +85,7 @@ static void showOverlay(void) {
     [close setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
     close.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.6];
     close.layer.cornerRadius = 22;
-    [close addTarget:vc class] action:NSSelectorFromString(@"hideOverlaySB") forControlEvents:UIControlEventTouchUpInside];
+    [close addTarget:[vc class] action:NSSelectorFromString(@"hideOverlaySB") forControlEvents:UIControlEventTouchUpInside];
     [vc.view addSubview:close];
     
     g_overlayWindow.hidden = NO;
