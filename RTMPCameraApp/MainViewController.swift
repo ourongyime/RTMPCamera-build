@@ -47,7 +47,7 @@ class MainViewController: UIViewController {
     private var phoneIP = ""
     private var logLines: [String] = []
     private let defaultRTMPPort = 1935
-    private let appVersion = "1.0.53"
+    private let appVersion = "1.0.54"
     private let tweakDir = "/var/mobile/Documents/rtmpcamera"
     private let tweakCfgFile = "/var/mobile/Documents/rtmpcamera/config.plist"
     private let tweakVideoFile = "/var/mobile/Documents/rtmpcamera/current_video.mp4"
@@ -158,6 +158,25 @@ class MainViewController: UIViewController {
         }
     }
 
+    private func requestCameraAndStart() {
+        let status = AVCaptureDevice.authorizationStatus(for: .video)
+        if status == .notDetermined {
+            AVCaptureDevice.requestAccess(for: .video) { [weak self] granted in
+                DispatchQueue.main.async {
+                    if granted { self?.startCameraPreview() }
+                    else { self?.addLog("[FAIL] 相机权限被拒绝") }
+                }
+            }
+            addLog("正在请求相机权限...")
+            return
+        }
+        if status == .denied || status == .restricted {
+            addLog("[FAIL] 相机权限被拒绝(code=\(status.rawValue))，请在设置中开启")
+            return
+        }
+        startCameraPreview()
+    }
+    
     private func startCameraPreview() {
         captureSession = AVCaptureSession()
         guard let device = AVCaptureDevice.default(for: .video),
@@ -276,11 +295,11 @@ class MainViewController: UIViewController {
         addLog("应用设置: \(sourceName()) 注入视频=\(videoInjectionOn ? "开" : "关") 注入音频=\(audioInjectionOn ? "开" : "关") 循环=\(loopEnabled ? "开" : "关")")
         stopLocalVideo()
         switch currentSource {
-        case .realCamera:
-            startCameraPreview()
+        case .realCamera: previewView.layer.sublayers?.forEach { case .realCamera:
+            startCameraPreview().removeFromSuperlayer() }; requestCameraAndStart()
             addLog("已切换到真实摄像头")
-        case .rtmpStream:
-            startCameraPreview()
+        case .rtmpStream: previewView.layer.sublayers?.forEach { case .rtmpStream:
+            startCameraPreview().removeFromSuperlayer() }; requestCameraAndStart()
             addLog("RTMP流模式（待守护进程支持）")
         case .localVideo:
             if validateAndCopyVideo() {
@@ -365,7 +384,8 @@ class MainViewController: UIViewController {
             stopLocalVideo()
             startCameraPreview()
         case .localVideo:
-            stopCameraPreview()
+            stopCameraPreview(); previewView.layer.sublayers?.forEach { case .localVideo:
+            stopCameraPreview().removeFromSuperlayer() }
             if !localVideoPath.isEmpty {
                 let fm = FileManager.default
                 let videoCopyExists = fm.fileExists(atPath: tweakVideoFile)

@@ -1,41 +1,20 @@
-﻿#!/bin/bash
-# prerm - RTMPCamera 卸载前脚本
-# CRITICAL: 必须先 unload daemon，禁止手动删除 MobileSubstrate dylib
-
-if [ -d "/var/jb" ]; then
-    PREFIX="/var/jb"
-else
-    PREFIX=""
-fi
-
+#!/bin/bash
+if [ -d "/var/jb" ]; then PREFIX="/var/jb"; else PREFIX=""; fi
 echo "RTMPCamera: 开始卸载..."
 
-# 1. 先停止守护进程
-if [ -f "$PREFIX/Library/LaunchDaemons/com.rtmpcamera.daemon.plist" ]; then
-    launchctl unload "$PREFIX/Library/LaunchDaemons/com.rtmpcamera.daemon.plist" 2>/dev/null
-    echo "RTMPCamera: 守护进程已停止"
-fi
+# 强制停止旧进程
+killall -9 RTMPDaemon 2>/dev/null || true
+launchctl unload "$PREFIX/Library/LaunchDaemons/com.rtmpcamera.daemon.plist" 2>/dev/null || true
+sleep 1
 
-# 2. 删除 LaunchDaemon plist
 rm -f "$PREFIX/Library/LaunchDaemons/com.rtmpcamera.daemon.plist"
-
-# 3. 删除 daemon 二进制
 rm -f "$PREFIX/usr/local/bin/RTMPDaemon"
-
-# 4. 删除 App
 rm -rf "$PREFIX/Applications/RTMPCameraApp.app"
-
-# 5. 删除共享内存文件 (如果存在)
 rm -f /tmp/rtmpcamera_shared_frame 2>/dev/null
 rm -f /tmp/rtmpcamera_control 2>/dev/null
+rm -f /var/mobile/Documents/rtmpcamera/tweak_loaded 2>/dev/null
+rm -f /var/mobile/Documents/rtmpcamera/tweak.log 2>/dev/null
 
-# 6. 注意: 不要手动删除 MobileSubstrate 下的 dylib
-#    dpkg 会自动管理，手动删除会导致 ElleKit 崩溃
-
-# 7. 刷新图标缓存
-if command -v uicache &>/dev/null; then
-    uicache -p "$PREFIX/Applications" 2>/dev/null
-fi
-
-echo "RTMPCamera: 卸载完成"
+if command -v uicache &>/dev/null; then uicache -p "$PREFIX/Applications" 2>/dev/null; fi
+echo "RTMPCamera: 卸载完成（已清理残留）"
 exit 0
