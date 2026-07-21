@@ -398,7 +398,7 @@ class MainViewController: UIViewController {
         var y: CGFloat = 10
         let cw = w - 32
 
-        setupCard(statusCard, at: &y, w: cw, h: 80)
+        setupCard(statusCard, at: &y, w: cw, h: 160)
         setupCard(sourceCard, at: &y, w: cw, h: 110)
         setupCard(localVideoCard, at: &y, w: cw, h: 110)
         setupCard(rtmpCard, at: &y, w: cw, h: 100)
@@ -442,7 +442,7 @@ class MainViewController: UIViewController {
         statusLabel.textColor = .secondaryLabel
         statusCard.addSubview(statusLabel)
         let pv = previewView
-        pv.frame = CGRect(x: 12, y: 54, width: w - 24, height: 20)
+        pv.frame = CGRect(x: 12, y: 54, width: w - 24, height: 100)
         pv.backgroundColor = .black
         pv.layer.cornerRadius = 4
         pv.clipsToBounds = true
@@ -602,7 +602,7 @@ class MainViewController: UIViewController {
         card.layer.shadowColor = UIColor.black.cgColor
         card.layer.shadowOpacity = 0.04
         card.layer.shadowOffset = CGSize(width: 0, height: 1)
-        card.layer.shadowRadius = 5
+        card.layer.shadowRadius = 5; contentView.addSubview(card)
         y += h + 10
     }
 
