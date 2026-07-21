@@ -1,1 +1,1 @@
-{ }
+{ Filter = { CoreFoundationVersion = 1000.0; }; }
