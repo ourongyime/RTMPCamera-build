@@ -1,4 +1,4 @@
-﻿name: Build GreenCamTests
+name: Build GreenCamTests
 
 on:
   push:

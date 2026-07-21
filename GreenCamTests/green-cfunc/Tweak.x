@@ -1,4 +1,4 @@
-﻿// GreenCam-CFunc: MSHookFunction approach (based on VCAMClone)
+// GreenCam-CFunc: MSHookFunction approach (based on VCAMClone)
 // Hooks the C function CMSampleBufferGetImageBuffer and fills with green
 #import <Foundation/Foundation.h>
 #import <AVFoundation/AVFoundation.h>
