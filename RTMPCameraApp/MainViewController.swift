@@ -140,7 +140,7 @@ class MainViewController: UIViewController {
             addLog("  Tweak 日志 (最后5行):")
             for l in lines.suffix(5) { addLog("  \(l)") }
         }
-        addResult("相机权限", AVCaptureDevice.authorizationStatus(for: .video).rawValue)
+        addResult("相机权限", AVCaptureDevice.authorizationStatus(for: .video).rawValue == 3, "code=\(AVCaptureDevice.authorizationStatus(for: .video).rawValue)")
         if !localVideoPath.isEmpty {
             addResult("已选视频", FileManager.default.fileExists(atPath: localVideoPath), localVideoPath)
         }
@@ -272,7 +272,7 @@ class MainViewController: UIViewController {
         }
     }
 
-    @objc private func applySettings() {
+    @objc func applySettings() {
         addLog("应用设置: \(sourceName()) 注入视频=\(videoInjectionOn ? "开" : "关") 注入音频=\(audioInjectionOn ? "开" : "关") 循环=\(loopEnabled ? "开" : "关")")
         stopLocalVideo()
         switch currentSource {
