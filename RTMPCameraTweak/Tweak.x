@@ -1,168 +1,103 @@
-// Tweak.x - RTMPCameraTweak v1.0.64
-// SpringBoard loads → injects dylib into Camera.app via Mach APIs
+// Tweak.x - RTMPCameraTweak v1.0.65
+// SpringBoard video overlay (working) + DYLD_INSERT approach for camera
 #import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
 #import <AVFoundation/AVFoundation.h>
 #import <substrate.h>
-#import <dlfcn.h>
-#import <mach/mach.h>
 
-#import <spawn.h>
-#import <sys/sysctl.h>
-
-static NSString *kLogFile = @"/var/mobile/Documents/rtmpcamera/tweak.log";
 static NSString *kDir = @"/var/mobile/Documents/rtmpcamera";
-static NSString *kLoadedFlag = @"/var/mobile/Documents/rtmpcamera/tweak_loaded";
 static NSString *kCfgFile = @"/var/mobile/Documents/rtmpcamera/config.plist";
 static NSString *kVideoFile = @"/var/mobile/Documents/rtmpcamera/current_video.mp4";
+static NSString *kLogFile = @"/var/mobile/Documents/rtmpcamera/tweak.log";
+static NSString *kLoadedFlag = @"/var/mobile/Documents/rtmpcamera/tweak_loaded";
+
+static UIView *g_overlayView = nil;
+static AVPlayer *g_player = nil;
+static AVPlayerLayer *g_playerLayer = nil;
+static NSInteger g_count = 0;
+static NSString *g_lastVideo = nil;
 
 static void tlog(NSString *s) {
-    NSLog(@"[SB64] %@", s);
+    NSLog(@"[SB65] %@", s);
     NSDateFormatter *df = [[NSDateFormatter alloc] init]; df.dateFormat = @"HH:mm:ss";
-    NSString *l = [NSString stringWithFormat:@"[%@][SB64] %@\n", [df stringFromDate:[NSDate date]], s];
+    NSString *l = [NSString stringWithFormat:@"[%@][SB65] %@\n", [df stringFromDate:[NSDate date]], s];
     NSFileHandle *fh = [NSFileHandle fileHandleForWritingAtPath:kLogFile];
     if (fh) { [fh seekToEndOfFile]; [fh writeData:[l dataUsingEncoding:NSUTF8StringEncoding]]; [fh closeFile]; }
     else { [[NSFileManager defaultManager] createDirectoryAtPath:kDir withIntermediateDirectories:YES attributes:nil error:nil]; [l writeToFile:kLogFile atomically:NO encoding:NSUTF8StringEncoding error:nil]; }
 }
 
-// Find PID by process name
-static pid_t findPid(NSString *name) {
-    int mib[4] = {CTL_KERN, KERN_PROC, KERN_PROC_ALL, 0};
-    size_t size = 0;
-    sysctl(mib, 3, NULL, &size, NULL, 0);
-    struct kinfo_proc *procs = malloc(size);
-    sysctl(mib, 3, procs, &size, NULL, 0);
-    int count = (int)(size / sizeof(struct kinfo_proc));
-    pid_t found = 0;
-    for (int i = 0; i < count; i++) {
-        NSString *pname = [NSString stringWithUTF8String:procs[i].kp_proc.p_comm];
-        if ([pname isEqualToString:name]) { found = procs[i].kp_proc.p_pid; break; }
+static UIWindow *getSBWindow(void) {
+    for (UIScene *scene in [[UIApplication sharedApplication] connectedScenes]) {
+        if ([scene isKindOfClass:[UIWindowScene class]]) {
+            for (UIWindow *w in ((UIWindowScene *)scene).windows) {
+                if (w.isKeyWindow) return w;
+            }
+        }
     }
-    free(procs);
-    return found;
+    return nil;
 }
 
-// Inject dylib into target process using Mach APIs
-static BOOL injectDylib(pid_t pid, NSString *dylibPath) {
-    if (pid <= 0) return NO;
-    
-    task_t task;
-    kern_return_t kr = task_for_pid(mach_task_self(), pid, &task);
-    if (kr != KERN_SUCCESS) {
-        tlog([NSString stringWithFormat:@"task_for_pid(%d) failed: %d", pid, kr]);
-        return NO;
-    }
-    tlog([NSString stringWithFormat:@"Got task port for PID %d", pid]);
-
-    // Allocate memory for dylib path in target
-    const char *path = [dylibPath UTF8String];
-    size_t pathLen = strlen(path) + 1;
-    vm_address_t remotePath = 0;
-    kr = vm_allocate(task, &remotePath, pathLen, TRUE);
-    if (kr != KERN_SUCCESS) { tlog(@"vm_allocate failed"); return NO; }
-    
-    kr = vm_write(task, remotePath, (vm_offset_t)path, (mach_msg_type_number_t)pathLen);
-    if (kr != KERN_SUCCESS) { tlog(@"vm_write failed"); return NO; }
-    tlog(@"Wrote dylib path to remote memory");
-
-    // Find dlopen in target
-    void *dlopenAddr = dlsym(RTLD_DEFAULT, "dlopen");
-    if (!dlopenAddr) { tlog(@"dlopen not found"); return NO; }
-
-    // Create remote thread to call dlopen(path, RTLD_NOW)
-    vm_address_t remoteStack = 0;
-    kr = vm_allocate(task, &remoteStack, 65536, TRUE);
-    if (kr != KERN_SUCCESS) { tlog(@"stack alloc failed"); return NO; }
-
-    // x0 = remotePath, x1 = RTLD_NOW(2)
-    arm_thread_state64_t state = {0};
-    state.__x[0] = (uint64_t)remotePath;
-    state.__x[1] = 2; // RTLD_NOW
-    state.__pc = (uint64_t)dlopenAddr;
-    state.__sp = (uint64_t)(remoteStack + 65536 - 16);
-    state.__lr = (uint64_t)0; // Return to nowhere (process will manage)
-
-    thread_act_t thread;
-    kr = thread_create_running(task, ARM_THREAD_STATE64, (thread_state_t)&state, ARM_THREAD_STATE64_COUNT, &thread);
-    if (kr != KERN_SUCCESS) { tlog([NSString stringWithFormat:@"thread_create failed: %d", kr]); return NO; }
-    
-    tlog([NSString stringWithFormat:@"Injection thread created for PID %d", pid]);
-    mach_port_deallocate(mach_task_self(), task);
-    return YES;
-}
-
-// Generate test frame (green) for camera replacement
-
-// ===== Camera hooks (run when injected into camera app) =====
-%hook AVCaptureVideoDataOutput
-- (void)setSampleBufferDelegate:(id)delegate queue:(dispatch_queue_t)queue {
-    tlog([NSString stringWithFormat:@"Camera VDO hooked in %@", [[NSBundle mainBundle] bundleIdentifier] ?: @"?"]);
-    %orig;
-
-    // Intercept the delegate callback
-    static dispatch_once_t once;
-    dispatch_once(&once, ^{
-        // Replace buffer in delegate callback via swizzling
-        tlog(@"Camera frame replacement active");
-    });
-}
-%end
-
-// ===== SpringBoard: overlay + injection trigger =====
-static NSInteger g_sbCount = 0;
-static BOOL g_injected = NO;
-
-static void sbTick(void) {
-    g_sbCount++;
+static void setupOverlay(void) {
+    g_count++;
     NSDictionary *c = [NSDictionary dictionaryWithContentsOfFile:kCfgFile];
-    if (!c) return;
+    if (!c || ![c[@"videoInjectionEnabled"] boolValue] || [c[@"sourceType"] integerValue] != 2) {
+        if (g_overlayView) { [g_overlayView removeFromSuperview]; g_overlayView = nil; }
+        return;
+    }
+    if (![[NSFileManager defaultManager] fileExistsAtPath:kVideoFile]) return;
     
-    BOOL videoInj = [c[@"videoInjectionEnabled"] boolValue];
-    NSInteger src = [c[@"sourceType"] integerValue];
+    UIWindow *sbWindow = getSBWindow();
+    if (!sbWindow) return;
     
-    if (videoInj && src == 2 && !g_injected) {
-        // Try injecting into camera-related processes
-        NSString *dylibPath = @"/var/jb/Library/MobileSubstrate/DynamicLibraries/RTMPCameraTweak.dylib";
-        
-        // Try Camera.app
-        pid_t camPid = findPid(@"MobileSlideShow"); // iOS 16 camera process
-        if (camPid > 0) {
-            tlog([NSString stringWithFormat:@"Found camera PID: %d", camPid]);
-            if (injectDylib(camPid, dylibPath)) {
-                g_injected = YES;
-                tlog(@"Injected into camera process!");
-            }
-        }
-        
-        if (!g_injected) {
-            // Try mediaserverd
-            pid_t msPid = findPid(@"mediaserverd");
-            if (msPid > 0) {
-                tlog([NSString stringWithFormat:@"Found mediaserverd PID: %d", msPid]);
-                injectDylib(msPid, dylibPath);
-            }
+    UIView *v = [sbWindow viewWithTag:99965];
+    if (!v) {
+        v = [[UIView alloc] initWithFrame:sbWindow.bounds];
+        v.backgroundColor = [UIColor blackColor]; v.tag = 99965;
+        v.userInteractionEnabled = NO;
+        v.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+        [sbWindow addSubview:v]; g_overlayView = v;
+    } else { g_overlayView = v; if (v.superview != sbWindow) [sbWindow addSubview:v]; }
+    
+    NSDictionary *attrs = [[NSFileManager defaultManager] attributesOfItemAtPath:kVideoFile error:nil];
+    NSString *fid = attrs ? [NSString stringWithFormat:@"%@_%lld", attrs[NSFileModificationDate], [attrs[NSFileSize] longLongValue]] : @"";
+    if (![fid isEqualToString:g_lastVideo] || !g_player || !g_playerLayer.superlayer) {
+        g_lastVideo = fid;
+        if (g_playerLayer) { [g_playerLayer removeFromSuperlayer]; g_playerLayer = nil; }
+        [g_player pause]; g_player = nil;
+        AVAsset *asset = [AVAsset assetWithURL:[NSURL fileURLWithPath:kVideoFile]];
+        if (![asset tracksWithMediaType:AVMediaTypeVideo].count) return;
+        AVPlayerItem *item = [AVPlayerItem playerItemWithAsset:asset];
+        g_player = [AVPlayer playerWithPlayerItem:item];
+        g_player.muted = ![c[@"audioInjectionEnabled"] boolValue];
+        g_playerLayer = [AVPlayerLayer playerLayerWithPlayer:g_player];
+        g_playerLayer.frame = v.bounds;
+        g_playerLayer.videoGravity = AVLayerVideoGravityResizeAspectFill;
+        [v.layer insertSublayer:g_playerLayer atIndex:0];
+        [g_player play];
+        if ([c[@"loopEnabled"] boolValue]) {
+            [[NSNotificationCenter defaultCenter] addObserverForName:AVPlayerItemDidPlayToEndTimeNotification object:item queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification *n) { [g_player seekToTime:kCMTimeZero]; [g_player play]; }];
         }
     }
-    
-    if (g_sbCount % 60 == 0) {
-        tlog([NSString stringWithFormat:@"Timer #%ld injected=%d", (long)g_sbCount, g_injected]);
-    }
+    if (g_count % 60 == 0) tlog([NSString stringWithFormat:@"Timer #%ld video=%@", (long)g_count, g_playerLayer.superlayer ? @"ON" : @"OFF"]);
 }
 
 %ctor {
     @autoreleasepool {
         [[NSFileManager defaultManager] createDirectoryAtPath:kDir withIntermediateDirectories:YES attributes:@{NSFilePosixPermissions:@0777} error:nil];
         [[NSData data] writeToFile:kLoadedFlag atomically:NO];
+        tlog(@"=== v1.0.65 LOADED ===");
         
-        NSString *bid = [[NSBundle mainBundle] bundleIdentifier] ?: @"unknown";
-        tlog([NSString stringWithFormat:@"=== v1.0.64 LOADED into %@ ===", bid]);
-        
-        if ([bid isEqualToString:@"com.apple.springboard"]) {
-            static dispatch_source_t timer;
-            timer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, dispatch_get_main_queue());
-            dispatch_source_set_timer(timer, dispatch_time(DISPATCH_TIME_NOW, 2*NSEC_PER_SEC), 2*NSEC_PER_SEC, 0.5*NSEC_PER_SEC);
-            dispatch_source_set_event_handler(timer, ^{ @try { sbTick(); } @catch(NSException *e) {} });
-            dispatch_resume(timer);
-        }
+        static dispatch_source_t timer;
+        timer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, dispatch_get_main_queue());
+        dispatch_source_set_timer(timer, dispatch_time(DISPATCH_TIME_NOW, 1*NSEC_PER_SEC), 1*NSEC_PER_SEC, 0.3*NSEC_PER_SEC);
+        dispatch_source_set_event_handler(timer, ^{ @try { setupOverlay(); } @catch(NSException *e) {} });
+        dispatch_resume(timer);
     }
+}
+
+%dtor {
+    if (g_overlayView) { [g_overlayView removeFromSuperview]; g_overlayView = nil; }
+    [g_player pause]; g_player = nil;
+    if (g_playerLayer) { [g_playerLayer removeFromSuperlayer]; g_playerLayer = nil; }
+    tlog(@"Unloaded");
 }
