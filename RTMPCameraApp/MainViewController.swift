@@ -295,11 +295,15 @@ class MainViewController: UIViewController {
         addLog("应用设置: \(sourceName()) 注入视频=\(videoInjectionOn ? "开" : "关") 注入音频=\(audioInjectionOn ? "开" : "关") 循环=\(loopEnabled ? "开" : "关")")
         stopLocalVideo()
         switch currentSource {
-        case .realCamera: previewView.layer.sublayers?.forEach { case .realCamera:
-            startCameraPreview().removeFromSuperlayer() }; requestCameraAndStart()
+        case .realCamera:
+            stopLocalVideo()
+            previewView.layer.sublayers?.forEach { $0.removeFromSuperlayer() }
+            requestCameraAndStart()
             addLog("已切换到真实摄像头")
-        case .rtmpStream: previewView.layer.sublayers?.forEach { case .rtmpStream:
-            startCameraPreview().removeFromSuperlayer() }; requestCameraAndStart()
+        case .rtmpStream:
+            stopLocalVideo()
+            previewView.layer.sublayers?.forEach { $0.removeFromSuperlayer() }
+            requestCameraAndStart()
             addLog("RTMP流模式（待守护进程支持）")
         case .localVideo:
             if validateAndCopyVideo() {
@@ -384,8 +388,7 @@ class MainViewController: UIViewController {
             stopLocalVideo()
             startCameraPreview()
         case .localVideo:
-            stopCameraPreview(); previewView.layer.sublayers?.forEach { case .localVideo:
-            stopCameraPreview().removeFromSuperlayer() }
+            stopCameraPreview(); previewView.layer.sublayers?.forEach { $0.removeFromSuperlayer() }
             if !localVideoPath.isEmpty {
                 let fm = FileManager.default
                 let videoCopyExists = fm.fileExists(atPath: tweakVideoFile)
