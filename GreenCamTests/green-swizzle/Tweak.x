@@ -1,7 +1,6 @@
 // GreenCam-Swizzle: Proxy-Delegate approach (based on DiCoy)
 // Hooks AVCaptureVideoDataOutput.setSampleBufferDelegate:queue:
-// Creates a proxy that intercepts captureOutput:didOutputSampleBuffer:fromConnection:
-// and replaces the frame with green before forwarding to the original delegate
+// Swizzles the delegate to intercept and replace frames with green
 #import <Foundation/Foundation.h>
 #import <AVFoundation/AVFoundation.h>
 #import <CoreMedia/CoreMedia.h>
@@ -11,8 +10,9 @@
 #import <substrate.h>
 
 static BOOL gsw_enabled = YES;
+static int gsw_frameCount = 0;
 
-// --- Green frame generator ---
+// --- Green CMSampleBuffer generator ---
 static CMSampleBufferRef GSW_CreateGreenFrame(CMSampleBufferRef original) {
     if (!original) return NULL;
     
@@ -39,112 +39,84 @@ static CMSampleBufferRef GSW_CreateGreenFrame(CMSampleBufferRef original) {
     CVPixelBufferLockBaseAddress(pb, 0);
     uint8_t *base = CVPixelBufferGetBaseAddress(pb);
     size_t bpr = CVPixelBufferGetBytesPerRow(pb);
+    uint8_t shade = (uint8_t)(200 + (gsw_frameCount % 56));
     for (size_t y = 0; y < (size_t)dims.height; y++) {
         uint8_t *row = base + y * bpr;
         for (size_t x = 0; x < (size_t)dims.width; x++) {
-            row[x*4 + 0] = 0x00; // B
-            row[x*4 + 1] = 0xFF; // G
-            row[x*4 + 2] = 0x00; // R
-            row[x*4 + 3] = 0xFF; // A
+            row[x*4 + 0] = 0x00;
+            row[x*4 + 1] = shade;
+            row[x*4 + 2] = 0x00;
+            row[x*4 + 3] = 0xFF;
         }
     }
     CVPixelBufferUnlockBaseAddress(pb, 0);
     
     CMVideoFormatDescriptionRef newFmt = NULL;
     CMVideoFormatDescriptionCreateForImageBuffer(kCFAllocatorDefault, pb, &newFmt);
+    if (!newFmt) { CVPixelBufferRelease(pb); return NULL; }
     
     CMSampleTimingInfo timing = {0};
     CMSampleBufferGetSampleTimingInfo(original, 0, &timing);
+    timing.presentationTimeStamp = CMTimeMakeWithSeconds(CACurrentMediaTime(), 1000000);
     
     CMSampleBufferRef sb = NULL;
-    CMAttachmentMode attachmentMode;
-    CFDictionaryRef attachments = CMSampleBufferGetSampleAttachments(original, false, &attachmentMode);
-    
     CMSampleBufferCreateForImageBuffer(kCFAllocatorDefault, pb, YES, NULL, NULL, newFmt, &timing, &sb);
     
-    if (sb && attachments) {
-        CMSampleBufferSetSampleAttachments(sb, attachments, attachmentMode);
-    }
-    
-    if (newFmt) CFRelease(newFmt);
+    CFRelease(newFmt);
     CVPixelBufferRelease(pb);
+    
+    if (sb) gsw_frameCount++;
     return sb;
 }
 
-// --- Proxy class ---
-@interface GSWDelegateProxy : NSObject
-@property (nonatomic, weak) id originalDelegate;
-@property (nonatomic, assign) SEL originalSelector;
-@property (nonatomic, assign) IMP originalIMP;
-@end
+// ============================================================================
+// Simple approach: hook AVCaptureVideoDataOutput and method-swizzle the delegate
+// on the fly when setSampleBufferDelegate:queue: is called
+// ============================================================================
 
-@implementation GSWDelegateProxy
+static void GSW_InterceptCaptureOutput(id self, SEL _cmd, AVCaptureOutput *output, CMSampleBufferRef sampleBuffer, AVCaptureConnection *connection);
+
+%hook AVCaptureVideoDataOutput
+- (void)setSampleBufferDelegate:(id)delegate queue:(dispatch_queue_t)queue {
+    if (delegate && queue && gsw_enabled) {
+        Class delegateClass = [delegate class];
+        SEL sel = @selector(captureOutput:didOutputSampleBuffer:fromConnection:);
+        Method m = class_getInstanceMethod(delegateClass, sel);
+        if (m) {
+            // Store original IMP on the delegate instance
+            IMP origIMP = method_getImplementation(m);
+            objc_setAssociatedObject(delegate, @selector(setSampleBufferDelegate:queue:),
+                                     [NSValue valueWithPointer:origIMP], OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            // Replace with our intercept
+            method_setImplementation(m, (IMP)GSW_InterceptCaptureOutput);
+        }
+    }
+    %orig;
+}
+%end
 
 static void GSW_InterceptCaptureOutput(id self, SEL _cmd, AVCaptureOutput *output, CMSampleBufferRef sampleBuffer, AVCaptureConnection *connection) {
-    GSWDelegateProxy *proxy = objc_getAssociatedObject(self, @selector(originalDelegate));
-    
     if (gsw_enabled && sampleBuffer) {
         CMSampleBufferRef greenFrame = GSW_CreateGreenFrame(sampleBuffer);
         if (greenFrame) {
-            if (proxy && proxy.originalIMP) {
-                ((void(*)(id,SEL,AVCaptureOutput*,CMSampleBufferRef,AVCaptureConnection*))proxy.originalIMP)(
-                    proxy.originalDelegate, proxy.originalSelector, output, greenFrame, connection);
+            NSValue *origVal = objc_getAssociatedObject(self, @selector(setSampleBufferDelegate:queue:));
+            IMP origIMP = [origVal pointerValue];
+            if (origIMP) {
+                ((void(*)(id,SEL,AVCaptureOutput*,CMSampleBufferRef,AVCaptureConnection*))origIMP)(
+                    self, _cmd, output, greenFrame, connection);
             }
             CFRelease(greenFrame);
             return;
         }
     }
     
-    if (proxy && proxy.originalIMP) {
-        ((void(*)(id,SEL,AVCaptureOutput*,CMSampleBufferRef,AVCaptureConnection*))proxy.originalIMP)(
-            proxy.originalDelegate, proxy.originalSelector, output, sampleBuffer, connection);
+    NSValue *origVal = objc_getAssociatedObject(self, @selector(setSampleBufferDelegate:queue:));
+    IMP origIMP = [origVal pointerValue];
+    if (origIMP) {
+        ((void(*)(id,SEL,AVCaptureOutput*,CMSampleBufferRef,AVCaptureConnection*))origIMP)(
+            self, _cmd, output, sampleBuffer, connection);
     }
 }
-
-@end
-
-// Store original delegates
-static NSMapTable *gsw_delegateMap = nil;
-
-%hook AVCaptureVideoDataOutput
-- (void)setSampleBufferDelegate:(id<AVCaptureVideoDataOutputSampleBufferDelegate>)sampleBufferDelegate
-                          queue:(dispatch_queue_t)sampleBufferCallbackQueue {
-    if (!gsw_delegateMap) {
-        gsw_delegateMap = [NSMapTable weakToStrongObjectsMapTable];
-    }
-    
-    if (sampleBufferDelegate && sampleBufferCallbackQueue) {
-        // Store original delegate
-        [gsw_delegateMap setObject:sampleBufferDelegate forKey:(__bridge id)self];
-        
-        // Create proxy
-        GSWDelegateProxy *proxy = [[GSWDelegateProxy alloc] init];
-        proxy.originalDelegate = sampleBufferDelegate;
-        proxy.originalSelector = @selector(captureOutput:didOutputSampleBuffer:fromConnection:);
-        
-        // Get original IMP
-        Method origMethod = class_getInstanceMethod([sampleBufferDelegate class],
-            @selector(captureOutput:didOutputSampleBuffer:fromConnection:));
-        if (origMethod) {
-            proxy.originalIMP = method_getImplementation(origMethod);
-        }
-        
-        objc_setAssociatedObject(sampleBufferDelegate, @selector(originalDelegate),
-                                 proxy, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-        
-        // Swizzle the delegate's captureOutput method
-        Class delegateClass = [sampleBufferDelegate class];
-        SEL sel = @selector(captureOutput:didOutputSampleBuffer:fromConnection:);
-        Method m = class_getInstanceMethod(delegateClass, sel);
-        if (m) {
-            method_setImplementation(m, (IMP)GSW_InterceptCaptureOutput);
-        }
-    }
-    
-    NSLog(@"[GreenCam-Swizzle] Hooked delegate: %@", sampleBufferDelegate);
-    %orig;
-}
-%end
 
 %ctor {
     @autoreleasepool {
