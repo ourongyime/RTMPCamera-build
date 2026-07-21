@@ -19,7 +19,7 @@ class MainViewController: UIViewController {
     private let applyButton = UIButton(type: .system)
     private var currentSource: VideoSourceType = .realCamera; private var rtmpURL = ""; private var localVideoPath = ""
     private var videoInjectionOn = true; private var audioInjectionOn = false; private var loopEnabled = true; private var phoneIP = ""
-    private var logLines: [String] = []; private let defaultRTMPPort = 1935; private let appVersion = "1.0.49"
+    private var logLines: [String] = []; private let defaultRTMPPort = 1935; private let appVersion = "1.0.50"
     private let tweakDir = "/var/mobile/Documents/rtmpcamera"; private let tweakCfgFile = "/var/mobile/Documents/rtmpcamera/config.plist"
     private let tweakVideoFile = "/var/mobile/Documents/rtmpcamera/current_video.mp4"
     private let tweakLoadedFile = "/var/mobile/Documents/rtmpcamera/tweak_loaded"; private let tweakLogFile = "/var/mobile/Documents/rtmpcamera/tweak.log"
