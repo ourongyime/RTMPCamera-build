@@ -1,5 +1,5 @@
-// Tweak.x - RTMPCameraTweak v1.0.55
-// SpringBoard overlay - fixed layer z-order + no old-code conflict
+// Tweak.x - RTMPCameraTweak v1.0.56
+// Multi-process: SpringBoard overlay + per-app camera hook
 #import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
 #import <AVFoundation/AVFoundation.h>
@@ -11,19 +11,11 @@ static NSString *kVideoFile = @"/var/mobile/Documents/rtmpcamera/current_video.m
 static NSString *kLogFile = @"/var/mobile/Documents/rtmpcamera/tweak.log";
 static NSString *kLoadedFlag = @"/var/mobile/Documents/rtmpcamera/tweak_loaded";
 
-static UIWindow *g_overlayWindow = nil;
-static AVPlayer *g_player = nil;
-static AVPlayerLayer *g_playerLayer = nil;
-static BOOL g_active = NO;
-static id g_loopObserver = nil;
-static NSString *g_lastVideo = nil;
-static NSInteger g_pollCount = 0;
-
-static void tlog(NSString *s) {
-    NSLog(@"[SBv55] %@", s);
+static void vtlog(NSString *tag, NSString *s) {
+    NSLog(@"[%@] %@", tag, s);
     NSDateFormatter *df = [[NSDateFormatter alloc] init];
     df.dateFormat = @"HH:mm:ss";
-    NSString *l = [NSString stringWithFormat:@"[%@][SBv55] %@\n", [df stringFromDate:[NSDate date]], s];
+    NSString *l = [NSString stringWithFormat:@"[%@][%@] %@\n", [df stringFromDate:[NSDate date]], tag, s];
     NSFileHandle *fh = [NSFileHandle fileHandleForWritingAtPath:kLogFile];
     if (fh) {
         [fh seekToEndOfFile];
@@ -35,33 +27,24 @@ static void tlog(NSString *s) {
     }
 }
 
-static void setupPlayer(void) {
-    static int callCount = 0;
-    callCount++;
-    
-    if (![[NSFileManager defaultManager] fileExistsAtPath:kVideoFile]) {
-        if (callCount == 1) tlog(@"No video file");
-        return;
-    }
+// ========== SpringBoard Overlay ==========
+static UIWindow *g_overlayWindow = nil;
+static AVPlayer *g_player = nil;
+static AVPlayerLayer *g_playerLayer = nil;
+static BOOL g_active = NO;
+static id g_loopObserver = nil;
+static NSString *g_lastVideo = nil;
+static NSInteger g_pollCount = 0;
 
+static void setupPlayer(void) {
+    if (![[NSFileManager defaultManager] fileExistsAtPath:kVideoFile]) return;
     AVAsset *asset = [AVAsset assetWithURL:[NSURL fileURLWithPath:kVideoFile]];
     NSArray *videoTracks = [asset tracksWithMediaType:AVMediaTypeVideo];
-    if (!videoTracks.count) {
-        if (callCount == 1) tlog(@"No video track");
-        return;
-    }
+    if (!videoTracks.count) return;
     
-    if (callCount <= 2) {
-        AVAssetTrack *vt = videoTracks.firstObject;
-        tlog([NSString stringWithFormat:@"Video: %.0fx%.0f %.1fs", vt.naturalSize.width, vt.naturalSize.height, CMTimeGetSeconds(asset.duration)]);
-    }
-
-    // Check if we need to recreate
     NSDictionary *attrs = [[NSFileManager defaultManager] attributesOfItemAtPath:kVideoFile error:nil];
     NSString *fileId = attrs ? [NSString stringWithFormat:@"%@_%lld", attrs[NSFileModificationDate], [attrs[NSFileSize] longLongValue]] : @"none";
-    if ([fileId isEqualToString:g_lastVideo] && g_player && g_player.currentItem && g_playerLayer.superlayer) {
-        return;
-    }
+    if ([fileId isEqualToString:g_lastVideo] && g_player && g_player.currentItem && g_playerLayer.superlayer) return;
     g_lastVideo = fileId;
 
     [g_player pause];
@@ -76,43 +59,31 @@ static void setupPlayer(void) {
     g_playerLayer.frame = [UIScreen mainScreen].bounds;
     g_playerLayer.videoGravity = AVLayerVideoGravityResizeAspectFill;
 
-    // KEY FIX: Add to view controller's view layer, not window layer
     if (g_overlayWindow && g_overlayWindow.rootViewController) {
         UIView *rootView = g_overlayWindow.rootViewController.view;
         rootView.backgroundColor = [UIColor blackColor];
         [rootView.layer insertSublayer:g_playerLayer atIndex:0];
         [g_player play];
-        tlog(@"Player added to root VC view");
     }
 
     NSDictionary *c = [NSDictionary dictionaryWithContentsOfFile:kCfgFile];
     BOOL loop = c ? [c[@"loopEnabled"] boolValue] : YES;
-    
     __weak AVPlayer *wp = g_player;
-    g_loopObserver = [[NSNotificationCenter defaultCenter] addObserverForName:AVPlayerItemDidPlayToEndTimeNotification
-                                                                        object:item queue:[NSOperationQueue mainQueue]
-                                                                    usingBlock:^(NSNotification *n) {
+    g_loopObserver = [[NSNotificationCenter defaultCenter] addObserverForName:AVPlayerItemDidPlayToEndTimeNotification object:item queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification *n) {
         if (loop) { [wp seekToTime:kCMTimeZero]; [wp play]; }
     }];
 }
 
 static void showOverlay(void) {
-    if (g_overlayWindow) {
-        if (g_overlayWindow.hidden) { g_overlayWindow.hidden = NO; tlog(@"Unhidden"); }
-        g_active = YES;
-        return;
-    }
-
+    if (g_overlayWindow) { if (g_overlayWindow.hidden) g_overlayWindow.hidden = NO; g_active = YES; return; }
     CGRect frame = [UIScreen mainScreen].bounds;
     g_overlayWindow = [[UIWindow alloc] initWithFrame:frame];
     g_overlayWindow.windowLevel = UIWindowLevelStatusBar + 5000;
     g_overlayWindow.backgroundColor = [UIColor blackColor];
     g_overlayWindow.userInteractionEnabled = YES;
-
     UIViewController *vc = [[UIViewController alloc] init];
     vc.view.backgroundColor = [UIColor blackColor];
     g_overlayWindow.rootViewController = vc;
-
     UIButton *close = [UIButton buttonWithType:UIButtonTypeSystem];
     close.frame = CGRectMake(frame.size.width - 55, 50, 44, 44);
     [close setTitle:@"X" forState:UIControlStateNormal];
@@ -122,72 +93,78 @@ static void showOverlay(void) {
     close.layer.cornerRadius = 22;
     [close addTarget:vc action:NSSelectorFromString(@"hideOverlaySB") forControlEvents:UIControlEventTouchUpInside];
     [vc.view addSubview:close];
-
     g_overlayWindow.hidden = NO;
     [g_overlayWindow makeKeyAndVisible];
     g_active = YES;
-    tlog(@"Overlay created at level=5000");
+    vtlog(@"SB", @"Overlay created level=6000");
 }
 
 static void hideOverlay(void) {
-    if (g_overlayWindow) { g_overlayWindow.hidden = YES; }
-    g_active = NO;
-    [g_player pause];
-    tlog(@"Overlay hidden");
+    if (g_overlayWindow) g_overlayWindow.hidden = YES;
+    g_active = NO; [g_player pause];
 }
 
 void hideOverlaySB(void) { hideOverlay(); }
 
-static void reloadAndApply(void) {
+static void sbReload(void) {
     g_pollCount++;
-    if (g_pollCount % 30 == 0) {
-        BOOL hasLayer = g_playerLayer && g_playerLayer.superlayer;
-        tlog([NSString stringWithFormat:@"Poll #%ld active=%d window=%@ playerLayer=%@",
-              (long)g_pollCount, g_active,
-              g_overlayWindow ? (g_overlayWindow.hidden ? @"hidden" : @"visible") : @"nil",
-              hasLayer ? @"YES" : @"NO"]);
+    if (g_pollCount % 60 == 0) {
+        vtlog(@"SB", [NSString stringWithFormat:@"Poll #%ld active=%d playerLayer=%@", (long)g_pollCount, g_active, (g_playerLayer && g_playerLayer.superlayer) ? @"YES" : @"NO"]);
     }
-
     NSDictionary *c = [NSDictionary dictionaryWithContentsOfFile:kCfgFile];
     if (!c) return;
-
     BOOL videoInj = [c[@"videoInjectionEnabled"] boolValue];
     NSInteger src = [c[@"sourceType"] integerValue];
     BOOL shouldShow = videoInj && src == 2;
-
-    if (shouldShow) {
-        if (!g_active) showOverlay();
-        setupPlayer();
-        if (g_player) {
-            BOOL audioInj = [c[@"audioInjectionEnabled"] boolValue];
-            g_player.muted = !audioInj;
-        }
-    } else {
-        if (g_active) hideOverlay();
-        if (g_playerLayer) { [g_playerLayer removeFromSuperlayer]; g_playerLayer = nil; }
-        [g_player pause]; g_player = nil;
-    }
+    if (shouldShow) { if (!g_active) showOverlay(); setupPlayer(); if (g_player) g_player.muted = ![c[@"audioInjectionEnabled"] boolValue]; }
+    else { if (g_active) hideOverlay(); if (g_playerLayer) { [g_playerLayer removeFromSuperlayer]; g_playerLayer = nil; } [g_player pause]; g_player = nil; }
 }
 
 %ctor {
     @autoreleasepool {
         [[NSFileManager defaultManager] createDirectoryAtPath:kDir withIntermediateDirectories:YES attributes:@{NSFilePosixPermissions:@0777} error:nil];
         [[NSData data] writeToFile:kLoadedFlag atomically:NO];
-        tlog(@"=== v1.0.55 LOADED ==="); 
-
-        static dispatch_source_t timer;
-        timer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, dispatch_get_main_queue());
-        dispatch_source_set_timer(timer, dispatch_time(DISPATCH_TIME_NOW, 1*NSEC_PER_SEC), 1*NSEC_PER_SEC, 0.2*NSEC_PER_SEC);
-        dispatch_source_set_event_handler(timer, ^{ reloadAndApply(); });
-        dispatch_resume(timer);
-        tlog(@"Timer started");
+        
+        NSString *bundleID = [[NSBundle mainBundle] bundleIdentifier] ?: @"unknown";
+        
+        if ([bundleID isEqualToString:@"com.apple.springboard"]) {
+            // SpringBoard: overlay mode
+            vtlog(@"SB", @"=== v1.0.56 LOADED ===");
+            static dispatch_source_t timer;
+            timer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, dispatch_get_main_queue());
+            dispatch_source_set_timer(timer, dispatch_time(DISPATCH_TIME_NOW, 1*NSEC_PER_SEC), 1*NSEC_PER_SEC, 0.2*NSEC_PER_SEC);
+            dispatch_source_set_event_handler(timer, ^{ sbReload(); });
+            dispatch_resume(timer);
+            
+        } else {
+            // Per-app: camera hook mode
+            vtlog(bundleID, @"=== v1.0.56 INJECTED ===");
+            // Hook will be added below via %hook
+        }
     }
 }
+
+// ========== Per-App Camera Hook ==========
+// Only compiled for non-SpringBoard processes
+%hook AVCaptureVideoDataOutput
+- (void)setSampleBufferDelegate:(id<AVCaptureVideoDataOutputSampleBufferDelegate>)sampleBufferDelegate queue:(dispatch_queue_t)sampleBufferCallbackQueue {
+    NSString *bid = [[NSBundle mainBundle] bundleIdentifier] ?: @"?";
+    vtlog(bid, [NSString stringWithFormat:@"VDO setDelegate: %@", [sampleBufferDelegate class]]);
+    %orig;
+}
+%end
+
+%hook AVCaptureSession
+- (void)startRunning {
+    NSString *bid = [[NSBundle mainBundle] bundleIdentifier] ?: @"?";
+    vtlog(bid, @"AVCaptureSession startRunning");
+    %orig;
+}
+%end
 
 %dtor {
     if (g_loopObserver) { [[NSNotificationCenter defaultCenter] removeObserver:g_loopObserver]; g_loopObserver = nil; }
     if (g_playerLayer) { [g_playerLayer removeFromSuperlayer]; g_playerLayer = nil; }
     [g_player pause]; g_player = nil;
     if (g_overlayWindow) { g_overlayWindow.hidden = YES; g_overlayWindow = nil; }
-    tlog(@"Unloaded");
 }
