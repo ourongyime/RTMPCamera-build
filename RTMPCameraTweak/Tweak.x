@@ -6,7 +6,7 @@
 #import <substrate.h>
 #import <dlfcn.h>
 #import <mach/mach.h>
-#import <mach/mach_vm.h>
+
 #import <spawn.h>
 #import <sys/sysctl.h>
 
@@ -57,12 +57,12 @@ static BOOL injectDylib(pid_t pid, NSString *dylibPath) {
     // Allocate memory for dylib path in target
     const char *path = [dylibPath UTF8String];
     size_t pathLen = strlen(path) + 1;
-    mach_vm_address_t remotePath = 0;
-    kr = mach_vm_allocate(task, &remotePath, pathLen, VM_FLAGS_ANYWHERE);
-    if (kr != KERN_SUCCESS) { tlog(@"mach_vm_allocate failed"); return NO; }
+    vm_address_t remotePath = 0;
+    kr = vm_allocate(task, &remotePath, pathLen, TRUE);
+    if (kr != KERN_SUCCESS) { tlog(@"vm_allocate failed"); return NO; }
     
-    kr = mach_vm_write(task, remotePath, (vm_offset_t)path, (mach_msg_type_number_t)pathLen);
-    if (kr != KERN_SUCCESS) { tlog(@"mach_vm_write failed"); return NO; }
+    kr = vm_write(task, remotePath, (vm_offset_t)path, (mach_msg_type_number_t)pathLen);
+    if (kr != KERN_SUCCESS) { tlog(@"vm_write failed"); return NO; }
     tlog(@"Wrote dylib path to remote memory");
 
     // Find dlopen in target
@@ -70,8 +70,8 @@ static BOOL injectDylib(pid_t pid, NSString *dylibPath) {
     if (!dlopenAddr) { tlog(@"dlopen not found"); return NO; }
 
     // Create remote thread to call dlopen(path, RTLD_NOW)
-    mach_vm_address_t remoteStack = 0;
-    kr = mach_vm_allocate(task, &remoteStack, 65536, VM_FLAGS_ANYWHERE);
+    vm_address_t remoteStack = 0;
+    kr = vm_allocate(task, &remoteStack, 65536, TRUE);
     if (kr != KERN_SUCCESS) { tlog(@"stack alloc failed"); return NO; }
 
     // x0 = remotePath, x1 = RTLD_NOW(2)
