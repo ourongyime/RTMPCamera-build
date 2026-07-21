@@ -173,7 +173,7 @@ static void reloadAndApply(void) {
     @autoreleasepool {
         [[NSFileManager defaultManager] createDirectoryAtPath:kDir withIntermediateDirectories:YES attributes:@{NSFilePosixPermissions:@0777} error:nil];
         [[NSData data] writeToFile:kLoadedFlag atomically:NO];
-        tlog(@"=== v1.0.55 LOADED ==="); pid_t pid; const char *args[] = { "killall", "-9", "RTMPDaemon", NULL }; posix_spawn(&pid, "/usr/bin/killall", NULL, NULL, (char *const *)args, NULL); tlog(@"Old daemon killed");
+        tlog(@"=== v1.0.55 LOADED ==="); 
 
         static dispatch_source_t timer;
         timer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, dispatch_get_main_queue());
