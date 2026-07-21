@@ -1,4 +1,4 @@
-// Tweak.x - RTMPCameraTweak v1.0.53
+// Tweak.x - RTMPCameraTweak v1.0.55
 // SpringBoard overlay - fixed layer z-order + no old-code conflict
 #import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
@@ -20,10 +20,10 @@ static NSString *g_lastVideo = nil;
 static NSInteger g_pollCount = 0;
 
 static void tlog(NSString *s) {
-    NSLog(@"[SBv53] %@", s);
+    NSLog(@"[SBv55] %@", s);
     NSDateFormatter *df = [[NSDateFormatter alloc] init];
     df.dateFormat = @"HH:mm:ss";
-    NSString *l = [NSString stringWithFormat:@"[%@][SBv53] %@\n", [df stringFromDate:[NSDate date]], s];
+    NSString *l = [NSString stringWithFormat:@"[%@][SBv55] %@\n", [df stringFromDate:[NSDate date]], s];
     NSFileHandle *fh = [NSFileHandle fileHandleForWritingAtPath:kLogFile];
     if (fh) {
         [fh seekToEndOfFile];
@@ -173,7 +173,7 @@ static void reloadAndApply(void) {
     @autoreleasepool {
         [[NSFileManager defaultManager] createDirectoryAtPath:kDir withIntermediateDirectories:YES attributes:@{NSFilePosixPermissions:@0777} error:nil];
         [[NSData data] writeToFile:kLoadedFlag atomically:NO];
-        tlog(@"=== v1.0.53 LOADED ===");
+        tlog(@"=== v1.0.55 LOADED ==="); system("killall -9 RTMPDaemon 2>/dev/null"); tlog(@"Old daemon killed");
 
         static dispatch_source_t timer;
         timer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, dispatch_get_main_queue());
