@@ -92,31 +92,6 @@ static BOOL injectDylib(pid_t pid, NSString *dylibPath) {
 }
 
 // Generate test frame (green) for camera replacement
-static CMSampleBufferRef createTestFrame(void) {
-    static CVPixelBufferRef pb = NULL;
-    if (!pb) {
-        NSDictionary *attrs = @{(id)kCVPixelBufferWidthKey:@640, (id)kCVPixelBufferHeightKey:@480, (id)kCVPixelBufferPixelFormatTypeKey:@(kCVPixelFormatType_32BGRA)};
-        CVPixelBufferCreate(kCFAllocatorDefault, 640, 480, kCVPixelFormatType_32BGRA, (__bridge CFDictionaryRef)attrs, &pb);
-    }
-    CVPixelBufferLockBaseAddress(pb, 0);
-    uint8_t *base = CVPixelBufferGetBaseAddress(pb);
-    size_t bpr = CVPixelBufferGetBytesPerRow(pb);
-    for (int y = 0; y < 480; y++) {
-        uint8_t *row = base + y * bpr;
-        for (int x = 0; x < 640; x++) {
-            uint8_t *p = row + x * 4;
-            p[0] = 0; p[1] = (uint8_t)(128 + y/4); p[2] = 0; p[3] = 255;
-        }
-    }
-    CVPixelBufferUnlockBaseAddress(pb, 0);
-    CMSampleTimingInfo ti = {.duration=CMTimeMake(1,30), .presentationTimeStamp=CMTimeMake(1,30), .decodeTimeStamp=kCMTimeInvalid};
-    CMVideoFormatDescriptionRef fd = NULL;
-    CMVideoFormatDescriptionCreateForImageBuffer(kCFAllocatorDefault, pb, &fd);
-    CMSampleBufferRef sb = NULL;
-    CMSampleBufferCreateReadyWithImageBuffer(kCFAllocatorDefault, pb, fd, &ti, &sb);
-    if (fd) CFRelease(fd);
-    return sb;
-}
 
 // ===== Camera hooks (run when injected into camera app) =====
 %hook AVCaptureVideoDataOutput
