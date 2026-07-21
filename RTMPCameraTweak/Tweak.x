@@ -1,4 +1,4 @@
-// Tweak.x - RTMPCameraTweak v1.0.45
+// Tweak.x - RTMPCameraTweak v1.0.46
 // Deep fix: retroactive VDO hooking + PreviewLayer overlay
 // iOS 16.1 + Dopamine RootHide + ElleKit
 
@@ -29,9 +29,6 @@ static NSDate *g_lastCfg = nil;
 // Logging
 static NSString *g_bundleID = @"";
 static NSString *bundleID(void){ if(g_bundleID.length)return g_bundleID; g_bundleID=[[NSBundle mainBundle] bundleIdentifier]?:@"unknown"; return g_bundleID; }
-static int g_vdoHooked = 0;
-static int g_sessionHooked = 0;
-static int g_frameCount = 0;
 
 static void tlog(NSString *s) {
     NSLog(@"[RTMPCam][%@] %@", bundleID(), s);
@@ -237,7 +234,7 @@ static void scanLayerForPreview(CALayer *layer, int depth) {
         g_lock = [NSObject new];
         [[NSFileManager defaultManager] createDirectoryAtPath:kDir withIntermediateDirectories:YES attributes:@{NSFilePosixPermissions:@0777} error:nil];
         [[NSData data] writeToFile:kLoadedFlag atomically:NO];
-        tlog(@"=== v1.0.45 LOADED ===");
+        tlog(@"=== v1.0.46 LOADED ===");
 
         BOOL dirOk = [[NSFileManager defaultManager] fileExistsAtPath:kDir];
         BOOL cfgOk = [[NSFileManager defaultManager] fileExistsAtPath:kCfgFile];
