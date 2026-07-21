@@ -19,7 +19,7 @@ class MainViewController: UIViewController {
     private let applyButton = UIButton(type: .system)
     private var currentSource: VideoSourceType = .realCamera; private var rtmpURL = ""; private var localVideoPath = ""
     private var videoInjectionOn = true; private var audioInjectionOn = false; private var loopEnabled = true; private var phoneIP = ""
-    private var logLines: [String] = []; private let defaultRTMPPort = 1935; private let appVersion = "1.0.50"
+    private var logLines: [String] = []; private let defaultRTMPPort = 1935; private let appVersion = "1.0.51"
     private let tweakDir = "/var/mobile/Documents/rtmpcamera"; private let tweakCfgFile = "/var/mobile/Documents/rtmpcamera/config.plist"
     private let tweakVideoFile = "/var/mobile/Documents/rtmpcamera/current_video.mp4"
     private let tweakLoadedFile = "/var/mobile/Documents/rtmpcamera/tweak_loaded"; private let tweakLogFile = "/var/mobile/Documents/rtmpcamera/tweak.log"
@@ -91,7 +91,7 @@ class MainViewController: UIViewController {
         addLog("==========================================")
     }
     @objc private func clearLog() { logLines.removeAll(); logTextView.text = "" }
-    @objc private func copyLog() { UIPasteboard.general.string = logLines.joined(separator: "\n"); addLog("Log copied") }
+    @objc private func copyLog() { var all = logLines.joined(separator: "\n"); if let tl = try? String(contentsOfFile: tweakLogFile, encoding: .utf8) { let last = tl.components(separatedBy: "\n").suffix(30).joined(separator: "\n"); all += "\n\n--- tweak.log ---\n" + last }; UIPasteboard.general.string = all; addLog("Log copied") }
 
     private func startCameraPreview() {
         if captureSession != nil { return }
