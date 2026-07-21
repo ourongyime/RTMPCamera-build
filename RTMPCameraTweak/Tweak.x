@@ -56,8 +56,8 @@ static void setupPlayer(void) {
     }
     
     AVAssetTrack *vt = videoTracks.firstObject;
-    tlog([NSString stringWithFormat:@"Video track: %@ size=%.0fx%.0f duration=%.1fs",
-          vt.mediaType, vt.naturalSize.width, vt.naturalSize.height,
+    tlog([NSString stringWithFormat:@"Video track: size=%.0fx%.0f duration=%.1fs",
+          vt.naturalSize.width, vt.naturalSize.height,
           CMTimeGetSeconds(asset.duration)]);
 
     NSDictionary *attrs = [[NSFileManager defaultManager] attributesOfItemAtPath:kVideoFile error:nil];
@@ -79,7 +79,7 @@ static void setupPlayer(void) {
     }
     
     g_player = [AVPlayer playerWithPlayerItem:item];
-    g_player.muted = NO; // Unmute so audio plays
+    g_player.muted = NO;
     g_playerLayer = [AVPlayerLayer playerLayerWithPlayer:g_player];
     g_playerLayer.frame = [UIScreen mainScreen].bounds;
     g_playerLayer.videoGravity = AVLayerVideoGravityResizeAspectFill;
@@ -97,8 +97,8 @@ static void setupPlayer(void) {
                                                                          queue:[NSOperationQueue mainQueue]
                                                                     usingBlock:^(NSNotification *n) {
         NSDictionary *c = [NSDictionary dictionaryWithContentsOfFile:kCfgFile];
-        BOOL loop = c ? [c[@"loopEnabled"] boolValue] : YES;
-        if (loop) {
+        BOOL shouldLoop = c ? [c[@"loopEnabled"] boolValue] : YES;
+        if (shouldLoop) {
             [wp seekToTime:kCMTimeZero];
             [wp play];
         }
@@ -117,36 +117,28 @@ static void showOverlay(void) {
 
     CGRect frame = [UIScreen mainScreen].bounds;
     g_overlayWindow = [[UIWindow alloc] initWithFrame:frame];
-
-    // Use maximum possible window level - above status bar, alerts, keyboards, everything
     g_overlayWindow.windowLevel = UIWindowLevelStatusBar + 10000;
     g_overlayWindow.backgroundColor = [UIColor blackColor];
-    g_overlayWindow.userInteractionEnabled = NO; // Don't block touches
+    g_overlayWindow.userInteractionEnabled = YES;
     g_overlayWindow.opaque = YES;
-    
-    // Ensure window is always visible
-    if ([g_overlayWindow respondsToSelector:@selector(setHidden:)]) {
-        [g_overlayWindow setValue:@NO forKey:@"hidden"];
-    }
-    
+
     UIViewController *vc = [[UIViewController alloc] init];
     g_overlayWindow.rootViewController = vc;
     
     UIButton *close = [UIButton buttonWithType:UIButtonTypeSystem];
     close.frame = CGRectMake(frame.size.width - 55, 55, 44, 44);
-    [close setTitle:@"✕" forState:UIControlStateNormal];
+    [close setTitle:@"X" forState:UIControlStateNormal];
     close.titleLabel.font = [UIFont boldSystemFontOfSize:22];
     [close setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
     close.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.6];
     close.layer.cornerRadius = 22;
     [close addTarget:vc action:NSSelectorFromString(@"hideOverlaySB") forControlEvents:UIControlEventTouchUpInside];
-    g_overlayWindow.userInteractionEnabled = YES;
     [vc.view addSubview:close];
 
     g_overlayWindow.hidden = NO;
     [g_overlayWindow makeKeyAndVisible];
     g_active = YES;
-    tlog(@"Overlay window created at level=%.0f", g_overlayWindow.windowLevel);
+    tlog([NSString stringWithFormat:@"Overlay window created at level=%.0f", g_overlayWindow.windowLevel]);
 }
 
 static void hideOverlay(void) {
@@ -165,7 +157,6 @@ void hideOverlaySB(void) {
 static void reloadAndApply(void) {
     g_pollCount++;
     if (g_pollCount % 30 == 0) {
-        // Log every 30s to confirm polling is alive
         tlog([NSString stringWithFormat:@"Poll #%ld - active=%d window=%@",
               (long)g_pollCount, g_active,
               g_overlayWindow ? (g_overlayWindow.hidden ? @"hidden" : @"visible") : @"nil"]);
@@ -177,7 +168,6 @@ static void reloadAndApply(void) {
     BOOL videoInj = [c[@"videoInjectionEnabled"] boolValue];
     BOOL audioInj = [c[@"audioInjectionEnabled"] boolValue];
     NSInteger src = [c[@"sourceType"] integerValue];
-    BOOL loop = c[@"loopEnabled"] ? [c[@"loopEnabled"] boolValue] : YES;
 
     // sourceType: 0=RealCamera, 1=RTMP, 2=LocalVideo
     BOOL shouldShow = videoInj && src == 2;
@@ -185,7 +175,7 @@ static void reloadAndApply(void) {
     if (shouldShow) {
         if (!g_active) showOverlay();
         setupPlayer();
-        if (g_player && !g_player.muted) {
+        if (g_player) {
             g_player.muted = !audioInj;
         }
     } else {
