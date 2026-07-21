@@ -1,4 +1,4 @@
-// Tweak.x - RTMPCameraTweak v1.0.46
+// Tweak.x - RTMPCameraTweak v1.0.41
 // Deep fix: retroactive VDO hooking + PreviewLayer overlay
 // iOS 16.1 + Dopamine RootHide + ElleKit
 
@@ -29,11 +29,10 @@ static NSDate *g_lastCfg = nil;
 // Logging
 static NSString *g_bundleID = @"";
 static NSString *bundleID(void){ if(g_bundleID.length)return g_bundleID; g_bundleID=[[NSBundle mainBundle] bundleIdentifier]?:@"unknown"; return g_bundleID; }
-
 static void tlog(NSString *s) {
     NSLog(@"[RTMPCam][%@] %@", bundleID(), s);
     NSDateFormatter *df = [[NSDateFormatter alloc] init]; df.dateFormat = @"HH:mm:ss";
-    NSString *l = [NSString stringWithFormat:@"[%@] %@\n", [df stringFromDate:[NSDate date]], s];
+    NSString *l = [NSString stringWithFormat:@"[%@][%@] %@\n", [df stringFromDate:[NSDate date]], bundleID(), s];
     NSFileHandle *fh = [NSFileHandle fileHandleForWritingAtPath:kLogFile];
     if (fh) { [fh seekToEndOfFile]; [fh writeData:[l dataUsingEncoding:NSUTF8StringEncoding]]; [fh closeFile]; }
     else { [[NSFileManager defaultManager] createDirectoryAtPath:kDir withIntermediateDirectories:YES attributes:nil error:nil];
@@ -234,7 +233,7 @@ static void scanLayerForPreview(CALayer *layer, int depth) {
         g_lock = [NSObject new];
         [[NSFileManager defaultManager] createDirectoryAtPath:kDir withIntermediateDirectories:YES attributes:@{NSFilePosixPermissions:@0777} error:nil];
         [[NSData data] writeToFile:kLoadedFlag atomically:NO];
-        tlog(@"=== v1.0.46 LOADED ===");
+        tlog(@"=== v1.0.47 LOADED ===");
 
         BOOL dirOk = [[NSFileManager defaultManager] fileExistsAtPath:kDir];
         BOOL cfgOk = [[NSFileManager defaultManager] fileExistsAtPath:kCfgFile];

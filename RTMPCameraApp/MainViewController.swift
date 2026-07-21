@@ -19,12 +19,14 @@ class MainViewController: UIViewController {
     private let applyButton = UIButton(type: .system)
     private var currentSource: VideoSourceType = .realCamera; private var rtmpURL = ""; private var localVideoPath = ""
     private var videoInjectionOn = true; private var audioInjectionOn = false; private var loopEnabled = true; private var phoneIP = ""
-    private var logLines: [String] = []; private let defaultRTMPPort = 1935; private let appVersion = "1.0.46"
+    private var logLines: [String] = []; private let defaultRTMPPort = 1935; private let appVersion = "1.0.47"
     private let tweakDir = "/var/mobile/Documents/rtmpcamera"; private let tweakCfgFile = "/var/mobile/Documents/rtmpcamera/config.plist"
     private let tweakVideoFile = "/var/mobile/Documents/rtmpcamera/current_video.mp4"
     private let tweakLoadedFile = "/var/mobile/Documents/rtmpcamera/tweak_loaded"; private let tweakLogFile = "/var/mobile/Documents/rtmpcamera/tweak.log"
 
-    override func viewDidLoad() { super.viewDidLoad(); detectLocalIP(); setupUI(); loadSavedConfig(); startCameraPreview(); logDetailedStatus() }
+    override func viewDidLoad() { super.viewDidLoad(); detectLocalIP(); setupUI(); loadSavedConfig(); startCameraPreview(); logDetailedStatus();
+        NotificationCenter.default.addObserver(forName: UIApplication.willEnterForegroundNotification, object: nil, queue: .main) { [weak self] _ in self?.refreshTweakLog() } }
+    private func refreshTweakLog() { if let tl = try? String(contentsOfFile: tweakLogFile, encoding: .utf8) { let lines = tl.components(separatedBy: "\n"); let last = lines.suffix(30).joined(separator: "\n"); DispatchQueue.main.async { self.logTextView.text = self.logLines.joined(separator: "\n") + "\n--- tweak.log ---\n" + last } } }
     deinit { captureSession?.stopRunning(); videoPlayer?.pause() }
 
     private func detectLocalIP() {
