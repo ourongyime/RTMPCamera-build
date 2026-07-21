@@ -6,6 +6,7 @@
 #import <substrate.h>
 #import <dlfcn.h>
 #import <mach/mach.h>
+#import <mach/mach_vm.h>
 #import <spawn.h>
 #import <sys/sysctl.h>
 
