@@ -2,7 +2,6 @@
 #import <AVFoundation/AVFoundation.h>
 #import <CoreMedia/CoreMedia.h>
 #import <CoreVideo/CoreVideo.h>
-#import <QuartzCore/QuartzCore.h>
 #import <objc/runtime.h>
 #import <os/lock.h>
 #import <substrate.h>
@@ -19,7 +18,6 @@ static void twlog(NSString *fmt, ...) {
     NSFileHandle *fh = [NSFileHandle fileHandleForWritingAtPath:g_logPath];
     if (fh) { [fh seekToEndOfFile]; [fh writeData:[line dataUsingEncoding:NSUTF8StringEncoding]]; [fh closeFile]; }
     else { [line writeToFile:g_logPath atomically:NO encoding:NSUTF8StringEncoding error:nil]; }
-    NSLog(@"[RTMPCamera] %@", msg);
 }
 
 // Config
@@ -43,6 +41,7 @@ static void loadCfg(void) {
 @property (nonatomic, strong) AVAssetReader *reader;
 @property (nonatomic, strong) AVAssetReaderTrackOutput *output;
 - (CMSampleBufferRef)nextFrame CF_RETURNS_RETAINED;
+- (void)reload;
 - (void)stop;
 @end
 
@@ -101,85 +100,6 @@ static CVImageBufferRef hooked_GetImageBuffer(CMSampleBufferRef sb) {
     return buf;
 }
 
-// Proxy delegate
-@interface RCVideoProxy : NSProxy <AVCaptureVideoDataOutputSampleBufferDelegate>
-@property(nonatomic,weak) id<AVCaptureVideoDataOutputSampleBufferDelegate> real;
-@end
-@implementation RCVideoProxy
-- (instancetype)initWithD:(id<AVCaptureVideoDataOutputSampleBufferDelegate>)d { self.real=d; return self; }
-- (BOOL)respondsToSelector:(SEL)s {
-    if(s==@selector(captureOutput:didOutputSampleBuffer:fromConnection:)) return YES;
-    if(s==@selector(captureOutput:didDropSampleBuffer:fromConnection:)) return YES;
-    return [self.real respondsToSelector:s] || [super respondsToSelector:s];
-}
-- (NSMethodSignature*)methodSignatureForSelector:(SEL)s { id t=(id)self.real?:(id)[NSObject class]; return [t methodSignatureForSelector:s]; }
-- (void)forwardInvocation:(NSInvocation*)i { if(self.real)[i invokeWithTarget:self.real]; }
-- (void)captureOutput:(AVCaptureOutput*)o didOutputSampleBuffer:(CMSampleBufferRef)s fromConnection:(AVCaptureConnection*)c {
-    if(g_vid&&g_src!=RCSrcReal){ CMSampleBufferRef inj=[getReader() nextFrame]; if(inj){ if([self.real respondsToSelector:_cmd])[self.real captureOutput:o didOutputSampleBuffer:inj fromConnection:c]; CFRelease(inj); return; } }
-    if([self.real respondsToSelector:_cmd])[self.real captureOutput:o didOutputSampleBuffer:s fromConnection:c];
-}
-- (void)captureOutput:(AVCaptureOutput*)o didDropSampleBuffer:(CMSampleBufferRef)s fromConnection:(AVCaptureConnection*)c {
-    if([self.real respondsToSelector:_cmd])[self.real captureOutput:o didDropSampleBuffer:s fromConnection:c];
-}
-@end
-
-// Forward decl
-@interface AVCaptureVideoPreviewLayer (RCExt)
-- (void)_rcInstall;
-- (void)_rcStep:(CADisplayLink*)s;
-@end
-static const void *kOverlayK=&kOverlayK,*kLinkK=&kLinkK;
-
-// ==================== HOOKS ====================
-static const char kPKey;
-%hook AVCaptureVideoDataOutput
-- (void)setSampleBufferDelegate:(id<AVCaptureVideoDataOutputSampleBufferDelegate>)sampleBufferDelegate queue:(dispatch_queue_t)queue {
-    if (sampleBufferDelegate && ![sampleBufferDelegate isKindOfClass:[RCVideoProxy class]]) {
-        RCVideoProxy *proxy = [[RCVideoProxy alloc] initWithD:sampleBufferDelegate];
-        objc_setAssociatedObject(sampleBufferDelegate, &kPKey, proxy, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-        twlog(@"[Proxy] installed: %@", NSStringFromClass([sampleBufferDelegate class]));
-        %orig(proxy, queue);
-    } else {
-        %orig;
-    }
-}
-%end
-
-%hook AVCaptureVideoPreviewLayer
-%new
-- (void)_rcInstall {
-    if (objc_getAssociatedObject(self, kOverlayK)) return;
-    AVSampleBufferDisplayLayer *dl = [AVSampleBufferDisplayLayer new];
-    dl.frame = self.bounds; dl.videoGravity = AVLayerVideoGravityResizeAspectFill;
-    dl.opacity = 1.0f; dl.zPosition = 9999;
-    [self addSublayer:dl];
-    objc_setAssociatedObject(self, kOverlayK, dl, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-    CADisplayLink *lk = [CADisplayLink displayLinkWithTarget:self selector:@selector(_rcStep:)];
-    [lk addToRunLoop:NSRunLoop.mainRunLoop forMode:NSRunLoopCommonModes];
-    objc_setAssociatedObject(self, kLinkK, lk, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-}
-%new
-- (void)_rcStep:(CADisplayLink*)sender {
-    AVSampleBufferDisplayLayer *dl = objc_getAssociatedObject(self, kOverlayK);
-    if (!dl) return; dl.frame = self.bounds;
-    if (g_src == RCSrcReal || !g_vid) { dl.opacity = 0.0f; return; }
-    if (!dl.readyForMoreMediaData) return;
-    CMSampleBufferRef f = [getReader() nextFrame];
-    if (f) { dl.opacity = 1.0f; [dl flush]; [dl enqueueSampleBuffer:f]; CFRelease(f); }
-}
-- (instancetype)initWithSession:(AVCaptureSession*)s {
-    self = %orig;
-    dispatch_async(dispatch_get_main_queue(), ^{ [self _rcInstall]; });
-    return self;
-}
-- (void)setSession:(AVCaptureSession*)s {
-    %orig;
-    dispatch_async(dispatch_get_main_queue(), ^{ [self _rcInstall]; });
-}
-- (void)layoutSublayers { %orig; [self _rcInstall]; }
-%end
-
-// Constructor
 %ctor {
     [[NSFileManager defaultManager] createDirectoryAtPath:@"/var/mobile/Documents/rtmpcamera" withIntermediateDirectories:YES attributes:nil error:nil];
     loadCfg(); %init;
