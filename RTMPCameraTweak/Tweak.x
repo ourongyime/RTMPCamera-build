@@ -35,26 +35,7 @@ static void loadCfg(void) {
     g_vid=[c[@"videoInjection"] boolValue]; g_aud=[c[@"audioInjection"] boolValue]; g_loop=[c[@"loop"] boolValue];
 }
 
-// Simple green frame generator
-static CVPixelBufferRef makeGreenFrame(size_t w, size_t h) {
-    NSDictionary *attrs = @{(id)kCVPixelBufferWidthKey:@(w), (id)kCVPixelBufferHeightKey:@(h),
-        (id)kCVPixelBufferPixelFormatTypeKey:@(kCVPixelFormatType_32BGRA),
-        (id)kCVPixelBufferBytesPerRowAlignmentKey:@(64)};
-    CVPixelBufferRef pb = NULL;
-    CVPixelBufferCreate(kCFAllocatorDefault, w, h, kCVPixelFormatType_32BGRA, (__bridge CFDictionaryRef)attrs, &pb);
-    CVPixelBufferLockBaseAddress(pb, 0);
-    uint8_t *base = CVPixelBufferGetBaseAddress(pb);
-    size_t bpr = CVPixelBufferGetBytesPerRow(pb);
-    for (size_t y=0; y<h; y++) {
-        uint8_t *row = base + y*bpr;
-        for (size_t x=0; x<w; x++) { row[x*4+0]=0x00; row[x*4+1]=0xFF; row[x*4+2]=0x00; row[x*4+3]=0xFF; }
-    }
-    // Draw red cross to verify it's our frame
-    for (size_t y=0; y<h; y++) { uint8_t *r=base+y*bpr; r[(y*w/h)*4+0]=0xFF; r[(y*w/h)*4+1]=0x00; r[(y*w/h)*4+2]=0x00; }
-    for (size_t x=0; x<w; x++) { uint8_t *r=base+(h/2)*bpr; r[x*4+0]=0xFF; r[x*4+1]=0x00; r[x*4+2]=0x00; }
-    CVPixelBufferUnlockBaseAddress(pb, 0);
-    return pb;
-}
+// Green frame drawn inline in hooked_GetImageBuffer
 
 // Hook CMSampleBufferGetImageBuffer
 static CVImageBufferRef (*orig_GetImageBuffer)(CMSampleBufferRef);
