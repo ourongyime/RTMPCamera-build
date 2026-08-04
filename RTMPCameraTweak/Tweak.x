@@ -173,21 +173,47 @@ static CMSampleBufferRef RC_CreateVideoFrame(CMSampleBufferRef original) {
 }
 
 // ====================== Approach 1: NSObject delegate hook ======================
-%hook NSObject
-- (void)captureOutput:(AVCaptureOutput *)output
-didOutputSampleBuffer:(CMSampleBufferRef)sampleBuffer
-       fromConnection:(AVCaptureConnection *)connection {
-    if (g_src != RCSrcReal && g_vid && sampleBuffer) {
-        CMSampleBufferRef vf = RC_CreateVideoFrame(sampleBuffer);
-        if (vf) {
-            %orig(output, vf, connection);
-            CFRelease(vf);
-            return;
+// ====================== Approach 1: AVCaptureVideoDataOutput delegate swizzle ======================
+static void RC_InterceptCapture(id self, SEL _cmd, AVCaptureOutput *output, CMSampleBufferRef sampleBuffer, AVCaptureConnection *connection);
+
+%hook AVCaptureVideoDataOutput
+- (void)setSampleBufferDelegate:(id)delegate queue:(dispatch_queue_t)queue {
+    if (delegate && queue && g_src != RCSrcReal && g_vid) {
+        Class delegateClass = [delegate class];
+        SEL sel = @selector(captureOutput:didOutputSampleBuffer:fromConnection:);
+        Method m = class_getInstanceMethod(delegateClass, sel);
+        if (m) {
+            IMP origIMP = method_getImplementation(m);
+            objc_setAssociatedObject(delegate, @selector(setSampleBufferDelegate:queue:),
+                                     [NSValue valueWithPointer:origIMP], OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            method_setImplementation(m, (IMP)RC_InterceptCapture);
         }
     }
     %orig;
 }
 %end
+
+static void RC_InterceptCapture(id self, SEL _cmd, AVCaptureOutput *output, CMSampleBufferRef sampleBuffer, AVCaptureConnection *connection) {
+    if (g_src != RCSrcReal && g_vid && sampleBuffer) {
+        CMSampleBufferRef vf = RC_CreateVideoFrame(sampleBuffer);
+        if (vf) {
+            NSValue *origVal = objc_getAssociatedObject(self, @selector(setSampleBufferDelegate:queue:));
+            IMP origIMP = [origVal pointerValue];
+            if (origIMP) {
+                ((void(*)(id,SEL,AVCaptureOutput*,CMSampleBufferRef,AVCaptureConnection*))origIMP)(
+                    self, _cmd, output, vf, connection);
+            }
+            CFRelease(vf);
+            return;
+        }
+    }
+    NSValue *origVal = objc_getAssociatedObject(self, @selector(setSampleBufferDelegate:queue:));
+    IMP origIMP = [origVal pointerValue];
+    if (origIMP) {
+        ((void(*)(id,SEL,AVCaptureOutput*,CMSampleBufferRef,AVCaptureConnection*))origIMP)(
+            self, _cmd, output, sampleBuffer, connection);
+    }
+}
 
 // ====================== Approach 2: CMSampleBufferGetImageBuffer fallback ======================
 static CVImageBufferRef (*orig_GetImageBuffer)(CMSampleBufferRef);
@@ -226,5 +252,5 @@ static CVImageBufferRef hooked_GetImageBuffer(CMSampleBufferRef sb) {
     [[NSFileManager defaultManager] createDirectoryAtPath:@"/var/mobile/Documents/rtmpcamera" withIntermediateDirectories:YES attributes:nil error:nil];
     loadCfg();
     MSHookFunction((void*)CMSampleBufferGetImageBuffer, (void*)hooked_GetImageBuffer, (void**)&orig_GetImageBuffer);
-    twlog(@"LOADED v1.0.82 src=%ld vid=%d aud=%d loop=%d", (long)g_src, g_vid, g_aud, g_loop);
+    twlog(@"LOADED v1.0.83 src=%ld vid=%d aud=%d loop=%d", (long)g_src, g_vid, g_aud, g_loop);
 }
