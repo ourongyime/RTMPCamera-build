@@ -1,8 +1,8 @@
 Package: com.rtmpcamera.camera
 Name: RTMPCamera
-Version: 1.0.78
+Version: 1.0.79
 Architecture: iphoneos-arm64e
-Description: iOS Virtual Camera - RTMP/Video/Injection/Floating/Log v1.0.78
+Description: iOS Virtual Camera - RTMP/Video/Injection/Floating/Log v1.0.79
 Maintainer: ourongyime <9450915@qq.com>
 Author: ourongyime <9450915@qq.com>
 Section: Tweaks

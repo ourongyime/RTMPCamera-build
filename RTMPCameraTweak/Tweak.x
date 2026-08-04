@@ -6,6 +6,7 @@
 #import <os/lock.h>
 #import <substrate.h>
 
+// Logger
 static NSString *g_logPath = @"/var/mobile/Documents/rtmpcamera/tweak.log";
 static void twlog(NSString *fmt, ...) __attribute__((format(NSString, 1, 2)));
 static void twlog(NSString *fmt, ...) {
@@ -19,6 +20,7 @@ static void twlog(NSString *fmt, ...) {
     else { [line writeToFile:g_logPath atomically:NO encoding:NSUTF8StringEncoding error:nil]; }
 }
 
+// Config
 static NSString *g_cfgPath = @"/var/mobile/Documents/rtmpcamera/config.plist";
 static NSString *g_videoPath = @"/var/mobile/Documents/rtmpcamera/current_video.mp4";
 typedef NS_ENUM(NSInteger, RCSrc) { RCSrcReal=0, RCSrcLocal=2 };
@@ -42,6 +44,7 @@ static void loadCfg(void) {
     if (lp) g_loop = [lp boolValue];
 }
 
+// Video Reader (outputs 420v bi-planar to match camera native format)
 @interface RCVideoReader : NSObject { @public os_unfair_lock _lock; }
 @property (nonatomic, strong) AVAssetReader *reader;
 @property (nonatomic, strong) AVAssetReaderTrackOutput *output;
@@ -60,10 +63,11 @@ static void loadCfg(void) {
     AVAsset *asset=[AVURLAsset URLAssetWithURL:url options:@{AVURLAssetPreferPreciseDurationAndTimingKey:@YES}];
     AVAssetTrack *track=[[asset tracksWithMediaType:AVMediaTypeVideo] firstObject];
     if(!track){ os_unfair_lock_unlock(&_lock); return; }
-    _output=[AVAssetReaderTrackOutput assetReaderTrackOutputWithTrack:track outputSettings:@{(id)kCVPixelBufferPixelFormatTypeKey:@(kCVPixelFormatType_32BGRA)}];
+    NSDictionary *settings = @{(id)kCVPixelBufferPixelFormatTypeKey:@(kCVPixelFormatType_420YpCbCr8BiPlanarFullRange)};
+    _output=[AVAssetReaderTrackOutput assetReaderTrackOutputWithTrack:track outputSettings:settings];
     _output.alwaysCopiesSampleData=NO;
     _reader=[[AVAssetReader alloc] initWithAsset:asset error:nil];
-    [_reader addOutput:_output]; [_reader startReading];
+    if(_reader && _output) { [_reader addOutput:_output]; [_reader startReading]; }
     os_unfair_lock_unlock(&_lock);
 }
 - (void)stop { os_unfair_lock_lock(&_lock); _stopped=YES; [_reader cancelReading]; _reader=nil; _output=nil; os_unfair_lock_unlock(&_lock); }
@@ -78,33 +82,100 @@ static void loadCfg(void) {
 @end
 
 static RCVideoReader *g_reader;
-static RCVideoReader *getReader(void) { static dispatch_once_t o; dispatch_once(&o,^{g_reader=[[RCVideoReader alloc] init]; [g_reader reload];}); return g_reader; }
+static RCVideoReader *getReader(void) {
+    static dispatch_once_t o; dispatch_once(&o,^{g_reader=[[RCVideoReader alloc] init]; [g_reader reload];});
+    return g_reader;
+}
 
+// Hook CMSampleBufferGetImageBuffer
 static int g_frameCount = 0;
 static CVImageBufferRef (*orig_GetImageBuffer)(CMSampleBufferRef);
+
+static BOOL is420v(OSType fmt) {
+    return fmt == kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange ||
+           fmt == kCVPixelFormatType_420YpCbCr8BiPlanarFullRange;
+}
+
+static BOOL isBGRA(OSType fmt) {
+    return fmt == kCVPixelFormatType_32BGRA;
+}
+
 static CVImageBufferRef hooked_GetImageBuffer(CMSampleBufferRef sb) {
     CVImageBufferRef buf = orig_GetImageBuffer(sb);
     g_frameCount++;
-    if (g_frameCount % 100 == 0) loadCfg();
+    if (g_frameCount % 150 == 0) loadCfg();
     if(!buf||g_src==RCSrcReal||!g_vid) return buf;
+
     CVPixelBufferRef pb=(CVPixelBufferRef)buf;
-    if(CVPixelBufferGetPixelFormatType(pb)==0) return buf;
-    CVPixelBufferLockBaseAddress(pb,0);
-    size_t w=CVPixelBufferGetWidth(pb),h=CVPixelBufferGetHeight(pb),bpr=CVPixelBufferGetBytesPerRow(pb);
-    uint8_t *base=CVPixelBufferGetBaseAddress(pb);
-    if(!base){ CVPixelBufferUnlockBaseAddress(pb,0); return buf; }
+    OSType fmt = CVPixelBufferGetPixelFormatType(pb);
+    if(fmt==0) return buf;
+
     CMSampleBufferRef vsb=[getReader() nextFrame];
-    if(vsb){
-        CVImageBufferRef vbuf=orig_GetImageBuffer(vsb);
-        if(vbuf){ CVPixelBufferLockBaseAddress(vbuf,0);
-            size_t vw=CVPixelBufferGetWidth(vbuf),vh=CVPixelBufferGetHeight(vbuf),vbpr=CVPixelBufferGetBytesPerRow(vbuf);
-            uint8_t *vbase=CVPixelBufferGetBaseAddress(vbuf);
-            if(vbase){ for(size_t y=0;y<h&&y<vh;y++){ size_t cp=((w<vw?w:vw)*4); if(cp>bpr)cp=bpr; if(cp>vbpr)cp=vbpr; memcpy(base+y*bpr,vbase+(y*vh/h)*vbpr,cp); } }
-            CVPixelBufferUnlockBaseAddress(vbuf,0);
+    if(!vsb) return buf;
+    CVImageBufferRef vbuf=orig_GetImageBuffer(vsb);
+    if(!vbuf){ CFRelease(vsb); return buf; }
+
+    if(is420v(fmt)) {
+        // 420v: copy plane data directly
+        CVPixelBufferLockBaseAddress(pb, 0);
+        CVPixelBufferLockBaseAddress(vbuf, kCVPixelBufferLock_ReadOnly);
+        size_t w=CVPixelBufferGetWidth(pb), h=CVPixelBufferGetHeight(pb);
+        size_t vw=CVPixelBufferGetWidth(vbuf), vh=CVPixelBufferGetHeight(vbuf);
+
+        // Plane 0 (Y)
+        uint8_t *yDst = CVPixelBufferGetBaseAddressOfPlane(pb, 0);
+        uint8_t *ySrc = CVPixelBufferGetBaseAddressOfPlane(vbuf, 0);
+        size_t yBprDst = CVPixelBufferGetBytesPerRowOfPlane(pb, 0);
+        size_t yBprSrc = CVPixelBufferGetBytesPerRowOfPlane(vbuf, 0);
+        if(yDst && ySrc) {
+            for(size_t y=0; y<h && y<vh; y++) {
+                size_t cp = w < vw ? w : vw;
+                if(cp > yBprDst) cp = yBprDst;
+                if(cp > yBprSrc) cp = yBprSrc;
+                memcpy(yDst + y*yBprDst, ySrc + (y*vh/h)*yBprSrc, cp);
+            }
         }
-        CFRelease(vsb);
+
+        // Plane 1 (CbCr)
+        uint8_t *uvDst = CVPixelBufferGetBaseAddressOfPlane(pb, 1);
+        uint8_t *uvSrc = CVPixelBufferGetBaseAddressOfPlane(vbuf, 1);
+        size_t uvBprDst = CVPixelBufferGetBytesPerRowOfPlane(pb, 1);
+        size_t uvBprSrc = CVPixelBufferGetBytesPerRowOfPlane(vbuf, 1);
+        size_t h2 = h/2, vh2 = vh/2;
+        if(uvDst && uvSrc) {
+            for(size_t y=0; y<h2 && y<vh2; y++) {
+                size_t cp = (w/2)*2 < (vw/2)*2 ? (w/2)*2 : (vw/2)*2;
+                if(cp > uvBprDst) cp = uvBprDst;
+                if(cp > uvBprSrc) cp = uvBprSrc;
+                memcpy(uvDst + y*uvBprDst, uvSrc + (y*vh2/h2)*uvBprSrc, cp);
+            }
+        }
+
+        CVPixelBufferUnlockBaseAddress(vbuf, kCVPixelBufferLock_ReadOnly);
+        CVPixelBufferUnlockBaseAddress(pb, 0);
     }
-    CVPixelBufferUnlockBaseAddress(pb,0);
+    else if(isBGRA(fmt)) {
+        // 32BGRA fallback
+        CVPixelBufferLockBaseAddress(pb, 0);
+        CVPixelBufferLockBaseAddress(vbuf, kCVPixelBufferLock_ReadOnly);
+        size_t w=CVPixelBufferGetWidth(pb), h=CVPixelBufferGetHeight(pb);
+        size_t bpr=CVPixelBufferGetBytesPerRow(pb);
+        size_t vw=CVPixelBufferGetWidth(vbuf), vh=CVPixelBufferGetHeight(vbuf);
+        size_t vbpr=CVPixelBufferGetBytesPerRow(vbuf);
+        uint8_t *base=CVPixelBufferGetBaseAddress(pb);
+        uint8_t *vbase=CVPixelBufferGetBaseAddress(vbuf);
+        if(base && vbase) {
+            for(size_t y=0; y<h && y<vh; y++) {
+                size_t cp = (w<vw?w:vw)*4;
+                if(cp>bpr) cp=bpr; if(cp>vbpr) cp=vbpr;
+                memcpy(base+y*bpr, vbase+(y*vh/h)*vbpr, cp);
+            }
+        }
+        CVPixelBufferUnlockBaseAddress(vbuf, kCVPixelBufferLock_ReadOnly);
+        CVPixelBufferUnlockBaseAddress(pb, 0);
+    }
+
+    CFRelease(vsb);
     return buf;
 }
 
@@ -112,5 +183,5 @@ static CVImageBufferRef hooked_GetImageBuffer(CMSampleBufferRef sb) {
     [[NSFileManager defaultManager] createDirectoryAtPath:@"/var/mobile/Documents/rtmpcamera" withIntermediateDirectories:YES attributes:nil error:nil];
     loadCfg();
     MSHookFunction((void*)CMSampleBufferGetImageBuffer, (void*)hooked_GetImageBuffer, (void**)&orig_GetImageBuffer);
-    twlog(@"LOADED v1.0.77 src=%ld vid=%d aud=%d loop=%d", (long)g_src, g_vid, g_aud, g_loop);
+    twlog(@"LOADED v1.0.79 src=%ld vid=%d aud=%d loop=%d", (long)g_src, g_vid, g_aud, g_loop);
 }
