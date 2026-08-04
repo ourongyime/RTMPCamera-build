@@ -30,7 +30,7 @@ jobs:
         run: |
           export THEOS=$HOME/theos
           export SDKVERSION=16.5
-          chmod 755 layout/DEBIAN/*
+          chmod 755 layout/DEBIAN/* 2>/dev/null || true
           make package FINALPACKAGE=1
 
       - name: Upload Artifact
@@ -41,16 +41,16 @@ jobs:
           if-no-files-found: error
           retention-days: 90
 
-      - name: 上传到 APT 源站
+      - name: 涓婁紶鍒?APT 婧愮珯
         if: success()
         run: |
           DEB_FILE=$(find . -name "*.deb" -type f | head -1)
-          echo "=== 上传 $DEB_FILE ==="
+          echo "=== 涓婁紶 $DEB_FILE ==="
           for i in 1 2 3; do
-            echo "HTTP 尝试 $i/3..."
+            echo "HTTP 灏濊瘯 $i/3..."
             RESULT=$(curl -s --connect-timeout 30 --max-time 120 -w "%{http_code}" -F "pwd=admin123" -F "deb_file=@$DEB_FILE" http://apt.chizicn.com/upload.php)
-            if echo "$RESULT" | grep -q "RTMPCamera"; then echo "HTTP 上传成功"; break; fi
+            if echo "$RESULT" | grep -q "RTMPCamera"; then echo "HTTP 涓婁紶鎴愬姛"; break; fi
             sleep 10
           done
           curl -s --retry 3 --connect-timeout 30 -T "$DEB_FILE" ftp://mb.chizicn.com:21/ --user apt_chizicn_com:phEQSiyFfFkabSrK || true
-          echo "=== 上传完成 ==="
+          echo "=== 涓婁紶瀹屾垚 ==="
