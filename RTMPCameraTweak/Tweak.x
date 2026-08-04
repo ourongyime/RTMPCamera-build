@@ -6,7 +6,7 @@
 #import <os/lock.h>
 
 // =========================================================================
-// 日志系统
+// 鏃ュ織绯荤粺
 // =========================================================================
 static NSString *g_logPath = @"/var/mobile/Documents/rtmpcamera/tweak.log";
 
@@ -32,7 +32,7 @@ static void twlog(NSString *fmt, ...) {
 }
 
 // =========================================================================
-// 配置管理
+// 閰嶇疆绠＄悊
 // =========================================================================
 static NSString *g_cfgPath = @"/var/mobile/Documents/rtmpcamera/config.plist";
 static NSString *g_videoPath = @"/var/mobile/Documents/rtmpcamera/current_video.mp4";
@@ -51,7 +51,7 @@ static BOOL         g_loopOn       = YES;
 static void reloadConfig(void) {
     NSDictionary *cfg = [NSDictionary dictionaryWithContentsOfFile:g_cfgPath];
     if (!cfg || ![cfg isKindOfClass:[NSDictionary class]]) {
-        twlog(@"配置读取失败，使用默认：本地视频 注入=开");
+        twlog(@"閰嶇疆璇诲彇澶辫触锛屼娇鐢ㄩ粯璁わ細鏈湴瑙嗛 娉ㄥ叆=寮€");
         g_source = RCSourceLocal;
         g_videoOn = YES;
         g_audioOn = YES;
@@ -65,12 +65,12 @@ static void reloadConfig(void) {
     g_videoOn = [cfg[@"videoInjection"] boolValue];
     g_audioOn = [cfg[@"audioInjection"] boolValue];
     g_loopOn  = [cfg[@"loop"] boolValue];
-    twlog(@"配置加载: 源=%ld 视频=%@ 音频=%@ 循环=%@", (long)g_source,
-          g_videoOn ? @"开" : @"关", g_audioOn ? @"开" : @"关", g_loopOn ? @"开" : @"关");
+    twlog(@"閰嶇疆鍔犺浇: 婧?%ld 瑙嗛=%@ 闊抽=%@ 寰幆=%@", (long)g_source,
+          g_videoOn ? @"寮€" : @"鍏?, g_audioOn ? @"寮€" : @"鍏?, g_loopOn ? @"寮€" : @"鍏?);
 }
 
 // =========================================================================
-// 视频帧管理器 (AVAssetReader)
+// 瑙嗛甯х鐞嗗櫒 (AVAssetReader)
 // =========================================================================
 @interface RCVideoManager : NSObject
 @property (nonatomic, strong) AVAssetReader *reader;
@@ -102,7 +102,7 @@ static void reloadConfig(void) {
     BOOL exists = [[NSFileManager defaultManager] fileExistsAtPath:g_videoPath];
     if (!exists) {
         os_unfair_lock_unlock(&_lock);
-        twlog(@"视频文件不存在: %@", g_videoPath);
+        twlog(@"瑙嗛鏂囦欢涓嶅瓨鍦? %@", g_videoPath);
         return;
     }
     NSURL *url = [NSURL fileURLWithPath:g_videoPath];
@@ -111,7 +111,7 @@ static void reloadConfig(void) {
     AVAssetTrack *track = [[asset tracksWithMediaType:AVMediaTypeVideo] firstObject];
     if (!track) {
         os_unfair_lock_unlock(&_lock);
-        twlog(@"视频文件无视频轨道");
+        twlog(@"瑙嗛鏂囦欢鏃犺棰戣建閬?);
         return;
     }
     NSDictionary *settings = @{(id)kCVPixelBufferPixelFormatTypeKey: @(kCVPixelFormatType_32BGRA)};
@@ -121,7 +121,7 @@ static void reloadConfig(void) {
     [_reader addOutput:_output];
     [_reader startReading];
     os_unfair_lock_unlock(&_lock);
-    twlog(@"视频读取器已启动: %@", [url lastPathComponent]);
+    twlog(@"瑙嗛璇诲彇鍣ㄥ凡鍚姩: %@", [url lastPathComponent]);
 }
 
 - (void)stop {
@@ -157,7 +157,7 @@ static void reloadConfig(void) {
 @end
 
 // =========================================================================
-// 视频代理 (AVCaptureVideoDataOutputSampleBufferDelegate)
+// 瑙嗛浠ｇ悊 (AVCaptureVideoDataOutputSampleBufferDelegate)
 // =========================================================================
 @interface RCVideoProxy : NSProxy <AVCaptureVideoDataOutputSampleBufferDelegate>
 @property (nonatomic, weak) id<AVCaptureVideoDataOutputSampleBufferDelegate> realDelegate;
@@ -177,7 +177,7 @@ static void reloadConfig(void) {
     return [super respondsToSelector:sel];
 }
 - (NSMethodSignature *)methodSignatureForSelector:(SEL)sel {
-    id target = self.realDelegate ?: [NSObject class];
+    id target = (id)self.realDelegate ?: (id)[NSObject class];
     return [target methodSignatureForSelector:sel];
 }
 - (void)forwardInvocation:(NSInvocation *)inv {
@@ -220,7 +220,7 @@ static const char kProxyKey;
     if (sampleBufferDelegate && ![sampleBufferDelegate isKindOfClass:[RCVideoProxy class]]) {
         RCVideoProxy *proxy = [[RCVideoProxy alloc] initWithDelegate:sampleBufferDelegate];
         objc_setAssociatedObject(sampleBufferDelegate, &kProxyKey, proxy, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-        twlog(@"[视频代理] 已安装代理: %@", NSStringFromClass([sampleBufferDelegate class]));
+        twlog(@"[瑙嗛浠ｇ悊] 宸插畨瑁呬唬鐞? %@", NSStringFromClass([sampleBufferDelegate class]));
         %orig(proxy, sampleBufferCallbackQueue);
     } else {
         %orig;
@@ -234,6 +234,12 @@ static const char kProxyKey;
 static const void *kDisplayLayerKey = &kDisplayLayerKey;
 static const void *kDisplayLinkKey  = &kDisplayLinkKey;
 
+
+// Forward-declare
+@interface AVCaptureVideoPreviewLayer (RCExt)
+- (void)_rcInstallDisplayLayer;
+- (void)_rcStep:(CADisplayLink *)sender;
+@end
 %hook AVCaptureVideoPreviewLayer
 
 %new
@@ -248,7 +254,7 @@ static const void *kDisplayLinkKey  = &kDisplayLinkKey;
     CADisplayLink *link = [CADisplayLink displayLinkWithTarget:self selector:@selector(_rcStep:)];
     [link addToRunLoop:[NSRunLoop mainRunLoop] forMode:NSRunLoopCommonModes];
     objc_setAssociatedObject(self, kDisplayLinkKey, link, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-    twlog(@"[预览层] 显示层已安装");
+    twlog(@"[棰勮灞俔 鏄剧ず灞傚凡瀹夎");
 }
 
 %new
@@ -292,11 +298,11 @@ static const void *kDisplayLinkKey  = &kDisplayLinkKey;
 %end
 
 // =========================================================================
-// Darwin 通知 + %ctor
+// Darwin 閫氱煡 + %ctor
 // =========================================================================
 static void cfgChanged(CFNotificationCenterRef c, void *o, CFStringRef n, const void *obj, CFDictionaryRef u) {
     reloadConfig();
-    twlog(@"配置变更通知已接收");
+    twlog(@"閰嶇疆鍙樻洿閫氱煡宸叉帴鏀?);
 }
 
 %ctor {
@@ -306,7 +312,7 @@ static void cfgChanged(CFNotificationCenterRef c, void *o, CFStringRef n, const 
     %init;
     NSString *bid = [[NSBundle mainBundle] bundleIdentifier] ?: @"?";
     NSString *pn  = [[NSProcessInfo processInfo] processName] ?: @"?";
-    twlog(@"RTMPCamera 注入成功! bid=%@ proc=%@ 源=%ld", bid, pn, (long)g_source);
+    twlog(@"RTMPCamera 娉ㄥ叆鎴愬姛! bid=%@ proc=%@ 婧?%ld", bid, pn, (long)g_source);
     CFNotificationCenterAddObserver(
         CFNotificationCenterGetDarwinNotifyCenter(), NULL, cfgChanged,
         CFSTR("com.rtmpcamera.configChanged"), NULL,
