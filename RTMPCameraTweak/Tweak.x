@@ -2,11 +2,12 @@
 #import <AVFoundation/AVFoundation.h>
 #import <CoreMedia/CoreMedia.h>
 #import <CoreVideo/CoreVideo.h>
+#import <QuartzCore/QuartzCore.h>
 #import <objc/runtime.h>
 #import <os/lock.h>
 
 // =========================================================================
-// 鏃ュ織绯荤粺
+// Logger
 // =========================================================================
 static NSString *g_logPath = @"/var/mobile/Documents/rtmpcamera/tweak.log";
 
@@ -32,7 +33,7 @@ static void twlog(NSString *fmt, ...) {
 }
 
 // =========================================================================
-// 閰嶇疆绠＄悊
+// Config Manager
 // =========================================================================
 static NSString *g_cfgPath = @"/var/mobile/Documents/rtmpcamera/config.plist";
 static NSString *g_videoPath = @"/var/mobile/Documents/rtmpcamera/current_video.mp4";
@@ -51,7 +52,7 @@ static BOOL         g_loopOn       = YES;
 static void reloadConfig(void) {
     NSDictionary *cfg = [NSDictionary dictionaryWithContentsOfFile:g_cfgPath];
     if (!cfg || ![cfg isKindOfClass:[NSDictionary class]]) {
-        twlog(@"閰嶇疆璇诲彇澶辫触锛屼娇鐢ㄩ粯璁わ細鏈湴瑙嗛 娉ㄥ叆=寮€");
+        twlog(@"Config: defaulting to local/video=on");
         g_source = RCSourceLocal;
         g_videoOn = YES;
         g_audioOn = YES;
@@ -65,18 +66,20 @@ static void reloadConfig(void) {
     g_videoOn = [cfg[@"videoInjection"] boolValue];
     g_audioOn = [cfg[@"audioInjection"] boolValue];
     g_loopOn  = [cfg[@"loop"] boolValue];
-    twlog(@"閰嶇疆鍔犺浇: 婧?%ld 瑙嗛=%@ 闊抽=%@ 寰幆=%@", (long)g_source,
-          g_videoOn ? @"寮€" : @"鍏?, g_audioOn ? @"寮€" : @"鍏?, g_loopOn ? @"寮€" : @"鍏?);
+    twlog(@"Config loaded: source=%ld video=%@ audio=%@ loop=%@", (long)g_source,
+          g_videoOn ? @"ON" : @"OFF", g_audioOn ? @"ON" : @"OFF", g_loopOn ? @"ON" : @"OFF");
 }
 
 // =========================================================================
-// 瑙嗛甯х鐞嗗櫒 (AVAssetReader)
+// Video Frame Manager (AVAssetReader)
 // =========================================================================
-@interface RCVideoManager : NSObject
+@interface RCVideoManager : NSObject {
+@public
+    os_unfair_lock _lock;
+}
 @property (nonatomic, strong) AVAssetReader *reader;
 @property (nonatomic, strong) AVAssetReaderTrackOutput *output;
 @property (nonatomic, assign) CMTime lastTime;
-@property (nonatomic, assign) os_unfair_lock lock;
 - (CMSampleBufferRef)nextFrame CF_RETURNS_RETAINED;
 - (void)reload;
 - (void)stop;
@@ -102,7 +105,7 @@ static void reloadConfig(void) {
     BOOL exists = [[NSFileManager defaultManager] fileExistsAtPath:g_videoPath];
     if (!exists) {
         os_unfair_lock_unlock(&_lock);
-        twlog(@"瑙嗛鏂囦欢涓嶅瓨鍦? %@", g_videoPath);
+        twlog(@"Video file missing: %@", g_videoPath);
         return;
     }
     NSURL *url = [NSURL fileURLWithPath:g_videoPath];
@@ -111,7 +114,7 @@ static void reloadConfig(void) {
     AVAssetTrack *track = [[asset tracksWithMediaType:AVMediaTypeVideo] firstObject];
     if (!track) {
         os_unfair_lock_unlock(&_lock);
-        twlog(@"瑙嗛鏂囦欢鏃犺棰戣建閬?);
+        twlog(@"No video track found");
         return;
     }
     NSDictionary *settings = @{(id)kCVPixelBufferPixelFormatTypeKey: @(kCVPixelFormatType_32BGRA)};
@@ -121,7 +124,7 @@ static void reloadConfig(void) {
     [_reader addOutput:_output];
     [_reader startReading];
     os_unfair_lock_unlock(&_lock);
-    twlog(@"瑙嗛璇诲彇鍣ㄥ凡鍚姩: %@", [url lastPathComponent]);
+    twlog(@"Reader started: %@", [url lastPathComponent]);
 }
 
 - (void)stop {
@@ -157,7 +160,7 @@ static void reloadConfig(void) {
 @end
 
 // =========================================================================
-// 瑙嗛浠ｇ悊 (AVCaptureVideoDataOutputSampleBufferDelegate)
+// Video Proxy (AVCaptureVideoDataOutputSampleBufferDelegate)
 // =========================================================================
 @interface RCVideoProxy : NSProxy <AVCaptureVideoDataOutputSampleBufferDelegate>
 @property (nonatomic, weak) id<AVCaptureVideoDataOutputSampleBufferDelegate> realDelegate;
@@ -220,7 +223,7 @@ static const char kProxyKey;
     if (sampleBufferDelegate && ![sampleBufferDelegate isKindOfClass:[RCVideoProxy class]]) {
         RCVideoProxy *proxy = [[RCVideoProxy alloc] initWithDelegate:sampleBufferDelegate];
         objc_setAssociatedObject(sampleBufferDelegate, &kProxyKey, proxy, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-        twlog(@"[瑙嗛浠ｇ悊] 宸插畨瑁呬唬鐞? %@", NSStringFromClass([sampleBufferDelegate class]));
+        twlog(@"[VideoProxy] installed for %@", NSStringFromClass([sampleBufferDelegate class]));
         %orig(proxy, sampleBufferCallbackQueue);
     } else {
         %orig;
@@ -229,17 +232,19 @@ static const char kProxyKey;
 %end
 
 // =========================================================================
+// Forward-declare
+// =========================================================================
+@interface AVCaptureVideoPreviewLayer (RCExt)
+- (void)_rcInstallDisplayLayer;
+- (void)_rcStep:(CADisplayLink *)sender;
+@end
+
+// =========================================================================
 // AVCaptureVideoPreviewLayer Hook
 // =========================================================================
 static const void *kDisplayLayerKey = &kDisplayLayerKey;
 static const void *kDisplayLinkKey  = &kDisplayLinkKey;
 
-
-// Forward-declare
-@interface AVCaptureVideoPreviewLayer (RCExt)
-- (void)_rcInstallDisplayLayer;
-- (void)_rcStep:(CADisplayLink *)sender;
-@end
 %hook AVCaptureVideoPreviewLayer
 
 %new
@@ -254,7 +259,7 @@ static const void *kDisplayLinkKey  = &kDisplayLinkKey;
     CADisplayLink *link = [CADisplayLink displayLinkWithTarget:self selector:@selector(_rcStep:)];
     [link addToRunLoop:[NSRunLoop mainRunLoop] forMode:NSRunLoopCommonModes];
     objc_setAssociatedObject(self, kDisplayLinkKey, link, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-    twlog(@"[棰勮灞俔 鏄剧ず灞傚凡瀹夎");
+    twlog(@"[PreviewLayer] display layer installed");
 }
 
 %new
@@ -298,11 +303,11 @@ static const void *kDisplayLinkKey  = &kDisplayLinkKey;
 %end
 
 // =========================================================================
-// Darwin 閫氱煡 + %ctor
+// Darwin Notification + %ctor
 // =========================================================================
 static void cfgChanged(CFNotificationCenterRef c, void *o, CFStringRef n, const void *obj, CFDictionaryRef u) {
     reloadConfig();
-    twlog(@"閰嶇疆鍙樻洿閫氱煡宸叉帴鏀?);
+    twlog(@"Config change notification received");
 }
 
 %ctor {
@@ -312,7 +317,7 @@ static void cfgChanged(CFNotificationCenterRef c, void *o, CFStringRef n, const 
     %init;
     NSString *bid = [[NSBundle mainBundle] bundleIdentifier] ?: @"?";
     NSString *pn  = [[NSProcessInfo processInfo] processName] ?: @"?";
-    twlog(@"RTMPCamera 娉ㄥ叆鎴愬姛! bid=%@ proc=%@ 婧?%ld", bid, pn, (long)g_source);
+    twlog(@"RTMPCamera INJECTED bid=%@ proc=%@ src=%ld", bid, pn, (long)g_source);
     CFNotificationCenterAddObserver(
         CFNotificationCenterGetDarwinNotifyCenter(), NULL, cfgChanged,
         CFSTR("com.rtmpcamera.configChanged"), NULL,
