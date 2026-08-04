@@ -3,11 +3,6 @@
 <plist version="1.0">
 <dict>
     <key>Filter</key>
-    <dict>
-        <key>Bundles</key>
-        <array>
-            <string>com.apple.AVFoundation</string>
-        </array>
-    </dict>
+    <dict/>
 </dict>
 </plist>
