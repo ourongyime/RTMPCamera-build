@@ -81,7 +81,7 @@ static RCVideoReader *g_reader;
 static RCVideoReader *getReader(void) { static dispatch_once_t o; dispatch_once(&o,^{g_reader=[[RCVideoReader alloc] init]; [g_reader reload];}); return g_reader; }
 
 static int g_frameCount = 0;
-static CMSampleBufferRef (*orig_GetImageBuffer)(CMSampleBufferRef);
+static CVImageBufferRef (*orig_GetImageBuffer)(CMSampleBufferRef);
 static CVImageBufferRef hooked_GetImageBuffer(CMSampleBufferRef sb) {
     CVImageBufferRef buf = orig_GetImageBuffer(sb);
     g_frameCount++;
