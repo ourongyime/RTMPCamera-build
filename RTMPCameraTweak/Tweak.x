@@ -303,6 +303,50 @@ static const void *kDisplayLinkKey  = &kDisplayLinkKey;
 %end
 
 // =========================================================================
+// CMSampleBufferGetImageBuffer Fallback Hook
+// =========================================================================
+
+// Declare MSHookFunction from substrate (no header import needed for rootless)
+extern void MSHookFunction(void *symbol, void *replace, void **result);
+
+// Fallback: hook CMSampleBufferGetImageBuffer to copy video frames into camera buffers
+static CVImageBufferRef (*orig_CMSampleBufferGetImageBuffer)(CMSampleBufferRef);
+
+static CVImageBufferRef hooked_CMSampleBufferGetImageBuffer(CMSampleBufferRef sb) {
+    CVImageBufferRef buf = orig_CMSampleBufferGetImageBuffer(sb);
+    if (!buf || !g_videoOn || g_source == RCSourceReal) return buf;
+    CVPixelBufferRef pb = (CVPixelBufferRef)buf;
+    OSType fmt = CVPixelBufferGetPixelFormatType(pb);
+    if (fmt == 0) return buf;
+    CVPixelBufferLockBaseAddress(pb, 0);
+    size_t w = CVPixelBufferGetWidth(pb), h = CVPixelBufferGetHeight(pb), bpr = CVPixelBufferGetBytesPerRow(pb);
+    uint8_t *base = CVPixelBufferGetBaseAddress(pb);
+    if (!base) { CVPixelBufferUnlockBaseAddress(pb, 0); return buf; }
+    CMSampleBufferRef vsb = nil;
+    static RCVideoManager *vm = nil;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ vm = [[RCVideoManager alloc] init]; });
+    vsb = [vm nextFrame];
+    if (vsb) {
+        CVImageBufferRef vbuf = CMSampleBufferGetImageBuffer(vsb);
+        if (vbuf) {
+            CVPixelBufferLockBaseAddress(vbuf, 0);
+            size_t vw = CVPixelBufferGetWidth(vbuf), vh = CVPixelBufferGetHeight(vbuf), vbpr = CVPixelBufferGetBytesPerRow(vbuf);
+            uint8_t *vbase = CVPixelBufferGetBaseAddress(vbuf);
+            if (vbase) {
+                for (size_t y = 0; y < h && y < vh; y++) {
+                    memcpy(base + y * bpr, vbase + (y * vh / h) * vbpr, (w < vw ? w : vw) * 4 > bpr ? bpr : (w < vw ? w : vw) * 4);
+                }
+            }
+            CVPixelBufferUnlockBaseAddress(vbuf, 0);
+        }
+        CFRelease(vsb);
+    }
+    CVPixelBufferUnlockBaseAddress(pb, 0);
+    return buf;
+}
+
+// =========================================================================
 // Darwin Notification + %ctor
 // =========================================================================
 static void cfgChanged(CFNotificationCenterRef c, void *o, CFStringRef n, const void *obj, CFDictionaryRef u) {
@@ -314,6 +358,8 @@ static void cfgChanged(CFNotificationCenterRef c, void *o, CFStringRef n, const 
     [[NSFileManager defaultManager] createDirectoryAtPath:@"/var/mobile/Documents/rtmpcamera"
                               withIntermediateDirectories:YES attributes:nil error:nil];
     reloadConfig();
+    MSHookFunction((void *)CMSampleBufferGetImageBuffer, (void *)hooked_CMSampleBufferGetImageBuffer, (void **)&orig_CMSampleBufferGetImageBuffer);
+    twlog(@"MSHookFunction installed on CMSampleBufferGetImageBuffer");
     %init;
     NSString *bid = [[NSBundle mainBundle] bundleIdentifier] ?: @"?";
     NSString *pn  = [[NSProcessInfo processInfo] processName] ?: @"?";
