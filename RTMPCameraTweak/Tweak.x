@@ -106,5 +106,5 @@ static CVImageBufferRef hooked_GetImageBuffer(CMSampleBufferRef sb) {
     MSHookFunction((void*)CMSampleBufferGetImageBuffer, (void*)hooked_GetImageBuffer, (void**)&orig_GetImageBuffer);
     NSString *bid = NSBundle.mainBundle.bundleIdentifier ?: @"?";
     NSString *pn  = NSProcessInfo.processInfo.processName ?: @"?";
-    twlog(@"LOADED v1.0.73 bid=%@ proc=%@ src=%ld vid=%d", bid, pn, (long)g_src, g_vid);
+    twlog(@"LOADED v1.0.74 bid=%@ proc=%@ src=%ld vid=%d", bid, pn, (long)g_src, g_vid);
 }

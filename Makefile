@@ -12,7 +12,7 @@ ADDITIONAL_CFLAGS = -fobjc-arc -I$(THEOS_PROJECT_DIR)
 
 include $(THEOS_MAKE_PATH)/aggregate.mk
 
-PACKAGE_VERSION = 1.0.73
+PACKAGE_VERSION = 1.0.74
 PACKAGE_BUILD = 1
 
 after-install::
