@@ -58,16 +58,25 @@ static void loadCfg(void) {
 - (instancetype)init { self=[super init]; if(self){_lock=OS_UNFAIR_LOCK_INIT; _stopped=NO;} return self; }
 - (void)reload {
     os_unfair_lock_lock(&_lock); _stopped=NO; [_reader cancelReading]; _reader=nil; _output=nil;
-    if (![[NSFileManager defaultManager] fileExistsAtPath:g_videoPath]) { os_unfair_lock_unlock(&_lock); return; }
+    if (![[NSFileManager defaultManager] fileExistsAtPath:g_videoPath]) { os_unfair_lock_unlock(&_lock); twlog(@"reload: no video file"); return; }
     NSURL *url=[NSURL fileURLWithPath:g_videoPath];
     AVAsset *asset=[AVURLAsset URLAssetWithURL:url options:@{AVURLAssetPreferPreciseDurationAndTimingKey:@YES}];
     AVAssetTrack *track=[[asset tracksWithMediaType:AVMediaTypeVideo] firstObject];
-    if(!track){ os_unfair_lock_unlock(&_lock); return; }
-    NSDictionary *settings = @{(id)kCVPixelBufferPixelFormatTypeKey:@(kCVPixelFormatType_420YpCbCr8BiPlanarFullRange)};
-    _output=[AVAssetReaderTrackOutput assetReaderTrackOutputWithTrack:track outputSettings:settings];
-    _output.alwaysCopiesSampleData=NO;
-    _reader=[[AVAssetReader alloc] initWithAsset:asset error:nil];
-    if(_reader && _output) { [_reader addOutput:_output]; [_reader startReading]; }
+    if(!track){ os_unfair_lock_unlock(&_lock); twlog(@"reload: no video track"); return; }
+    // Prefer 420v VideoRange (H.264 native), fallback to FullRange, then BGRA
+    NSArray *fmts = @[@(kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange),
+                       @(kCVPixelFormatType_420YpCbCr8BiPlanarFullRange),
+                       @(kCVPixelFormatType_32BGRA)];
+    BOOL ok=NO;
+    for (NSNumber *fmtObj in fmts) {
+        NSDictionary *settings = @{(id)kCVPixelBufferPixelFormatTypeKey:fmtObj};
+        _output=[AVAssetReaderTrackOutput assetReaderTrackOutputWithTrack:track outputSettings:settings];
+        _output.alwaysCopiesSampleData=NO;
+        _reader=[[AVAssetReader alloc] initWithAsset:asset error:nil];
+        if(_reader && _output) { [_reader addOutput:_output]; if([_reader startReading]) { ok=YES; twlog(@"reload: ok fmt=%d", [fmtObj intValue]); break; } }
+        _reader=nil; _output=nil;
+    }
+    if (!ok) twlog(@"reload: FAILED all formats");
     os_unfair_lock_unlock(&_lock);
 }
 - (void)stop { os_unfair_lock_lock(&_lock); _stopped=YES; [_reader cancelReading]; _reader=nil; _output=nil; os_unfair_lock_unlock(&_lock); }
@@ -183,5 +192,5 @@ static CVImageBufferRef hooked_GetImageBuffer(CMSampleBufferRef sb) {
     [[NSFileManager defaultManager] createDirectoryAtPath:@"/var/mobile/Documents/rtmpcamera" withIntermediateDirectories:YES attributes:nil error:nil];
     loadCfg();
     MSHookFunction((void*)CMSampleBufferGetImageBuffer, (void*)hooked_GetImageBuffer, (void**)&orig_GetImageBuffer);
-    twlog(@"LOADED v1.0.79 src=%ld vid=%d aud=%d loop=%d", (long)g_src, g_vid, g_aud, g_loop);
+    twlog(@"LOADED v1.0.80 src=%ld vid=%d aud=%d loop=%d", (long)g_src, g_vid, g_aud, g_loop);
 }
