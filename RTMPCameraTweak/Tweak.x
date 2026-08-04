@@ -99,7 +99,6 @@ static RCVideoReader *getReader(void) {
 // Hook CMSampleBufferGetImageBuffer
 static int g_frameCount = 0;
 
-static int g_diagCount = 0;
 
 // ====================== Video frame generator ======================
 static CMSampleBufferRef RC_CreateVideoFrame(CMSampleBufferRef original) {
