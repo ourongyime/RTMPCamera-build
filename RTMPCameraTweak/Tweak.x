@@ -113,7 +113,16 @@ static BOOL isBGRA(OSType fmt) {
 static CVImageBufferRef hooked_GetImageBuffer(CMSampleBufferRef sb) {
     CVImageBufferRef buf = orig_GetImageBuffer(sb);
     g_frameCount++;
+    ++g_diagCount;
     if (g_frameCount % 150 == 0) loadCfg();
+    if (g_diagCount % 300 == 0) {
+        CVPixelBufferRef dpb = buf ? (CVPixelBufferRef)buf : NULL;
+        OSType dfmt = dpb ? CVPixelBufferGetPixelFormatType(dpb) : 0;
+        size_t dw = dpb ? CVPixelBufferGetWidth(dpb) : 0, dh = dpb ? CVPixelBufferGetHeight(dpb) : 0;
+        BOOL dP0 = dpb ? (CVPixelBufferGetBaseAddressOfPlane(dpb,0) != NULL) : NO;
+        twlog("DIAG f=%d fmt=0x%x %zux%zu p0=%d src=%ld vid=%d",
+              g_frameCount, (unsigned)dfmt, dw, dh, dP0, (long)g_src, g_vid);
+    }
     if(!buf||g_src==RCSrcReal||!g_vid) return buf;
 
     CVPixelBufferRef pb=(CVPixelBufferRef)buf;
