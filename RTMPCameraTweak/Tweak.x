@@ -120,7 +120,7 @@ static CVImageBufferRef hooked_GetImageBuffer(CMSampleBufferRef sb) {
         OSType dfmt = dpb ? CVPixelBufferGetPixelFormatType(dpb) : 0;
         size_t dw = dpb ? CVPixelBufferGetWidth(dpb) : 0, dh = dpb ? CVPixelBufferGetHeight(dpb) : 0;
         BOOL dP0 = dpb ? (CVPixelBufferGetBaseAddressOfPlane(dpb,0) != NULL) : NO;
-        twlog("DIAG f=%d fmt=0x%x %zux%zu p0=%d src=%ld vid=%d",
+        twlog(@"DIAG f=%d fmt=0x%x %zux%zu p0=%d src=%ld vid=%d",
               g_frameCount, (unsigned)dfmt, dw, dh, dP0, (long)g_src, g_vid);
     }
     if(!buf||g_src==RCSrcReal||!g_vid) return buf;
