@@ -98,6 +98,7 @@ static RCVideoReader *getReader(void) {
 
 // Hook CMSampleBufferGetImageBuffer
 static int g_frameCount = 0;
+static int g_diagCount = 0;
 static CVImageBufferRef (*orig_GetImageBuffer)(CMSampleBufferRef);
 
 static BOOL is420v(OSType fmt) {
@@ -109,27 +110,12 @@ static BOOL isBGRA(OSType fmt) {
     return fmt == kCVPixelFormatType_32BGRA;
 }
 
-static int g_diagCount = 0;
 static CVImageBufferRef hooked_GetImageBuffer(CMSampleBufferRef sb) {
     CVImageBufferRef buf = orig_GetImageBuffer(sb);
     g_frameCount++;
     if (g_frameCount % 150 == 0) loadCfg();
-
-    // Diagnostic: log every 300 frames
-    if (++g_diagCount % 300 == 1) {
-        CVPixelBufferRef dpb = buf ? (CVPixelBufferRef)buf : NULL;
-        OSType dfmt = dpb ? CVPixelBufferGetPixelFormatType(dpb) : 0;
-        size_t dw = dpb ? CVPixelBufferGetWidth(dpb) : 0;
-        size_t dh = dpb ? CVPixelBufferGetHeight(dpb) : 0;
-        BOOL dPlane0 = dpb ? (CVPixelBufferGetBaseAddressOfPlane(dpb, 0) != NULL) : NO;
-        BOOL dPlane1 = dpb ? (CVPixelBufferGetBaseAddressOfPlane(dpb, 1) != NULL) : NO;
-        twlog(@"DIAG frame=%d fmt=0x%x(%c%c%c%c) %zux%zu plane0=%d plane1=%d src=%ld vid=%d",
-              g_frameCount, (unsigned)dfmt,
-              (int)(dfmt>>24)&0xff, (int)(dfmt>>16)&0xff, (int)(dfmt>>8)&0xff, (int)dfmt&0xff,
-              dw, dh, dPlane0, dPlane1, (long)g_src, g_vid);
-    }
-
     if(!buf||g_src==RCSrcReal||!g_vid) return buf;
+
     CVPixelBufferRef pb=(CVPixelBufferRef)buf;
     OSType fmt = CVPixelBufferGetPixelFormatType(pb);
     if(fmt==0) return buf;
@@ -138,63 +124,6 @@ static CVImageBufferRef hooked_GetImageBuffer(CMSampleBufferRef sb) {
     if(!vsb) return buf;
     CVImageBufferRef vbuf=orig_GetImageBuffer(vsb);
     if(!vbuf){ CFRelease(vsb); return buf; }
-
-    if(is420v(fmt)) {
-        CVPixelBufferLockBaseAddress(pb, 0);
-        CVPixelBufferLockBaseAddress(vbuf, kCVPixelBufferLock_ReadOnly);
-        size_t w=CVPixelBufferGetWidth(pb), h=CVPixelBufferGetHeight(pb);
-        size_t vw=CVPixelBufferGetWidth(vbuf), vh=CVPixelBufferGetHeight(vbuf);
-        uint8_t *yDst = CVPixelBufferGetBaseAddressOfPlane(pb, 0);
-        uint8_t *ySrc = CVPixelBufferGetBaseAddressOfPlane(vbuf, 0);
-        size_t yBprDst = CVPixelBufferGetBytesPerRowOfPlane(pb, 0);
-        size_t yBprSrc = CVPixelBufferGetBytesPerRowOfPlane(vbuf, 0);
-        if(yDst && ySrc) {
-            for(size_t y=0; y<h && y<vh; y++) {
-                size_t cp = w < vw ? w : vw;
-                if(cp > yBprDst) cp = yBprDst;
-                if(cp > yBprSrc) cp = yBprSrc;
-                memcpy(yDst + y*yBprDst, ySrc + (y*vh/h)*yBprSrc, cp);
-            }
-        }
-        uint8_t *uvDst = CVPixelBufferGetBaseAddressOfPlane(pb, 1);
-        uint8_t *uvSrc = CVPixelBufferGetBaseAddressOfPlane(vbuf, 1);
-        size_t uvBprDst = CVPixelBufferGetBytesPerRowOfPlane(pb, 1);
-        size_t uvBprSrc = CVPixelBufferGetBytesPerRowOfPlane(vbuf, 1);
-        size_t h2 = h/2, vh2 = vh/2;
-        if(uvDst && uvSrc) {
-            for(size_t y=0; y<h2 && y<vh2; y++) {
-                size_t cp = (w<vw?w:vw);
-                if(cp > uvBprDst) cp = uvBprDst;
-                if(cp > uvBprSrc) cp = uvBprSrc;
-                memcpy(uvDst + y*uvBprDst, uvSrc + (y*vh2/h2)*uvBprSrc, cp);
-            }
-        }
-        CVPixelBufferUnlockBaseAddress(vbuf, kCVPixelBufferLock_ReadOnly);
-        CVPixelBufferUnlockBaseAddress(pb, 0);
-    }
-    else if(isBGRA(fmt)) {
-        CVPixelBufferLockBaseAddress(pb, 0);
-        CVPixelBufferLockBaseAddress(vbuf, kCVPixelBufferLock_ReadOnly);
-        size_t w=CVPixelBufferGetWidth(pb), h=CVPixelBufferGetHeight(pb);
-        size_t bpr=CVPixelBufferGetBytesPerRow(pb);
-        size_t vw=CVPixelBufferGetWidth(vbuf), vh=CVPixelBufferGetHeight(vbuf);
-        size_t vbpr=CVPixelBufferGetBytesPerRow(vbuf);
-        uint8_t *base=CVPixelBufferGetBaseAddress(pb);
-        uint8_t *vbase=CVPixelBufferGetBaseAddress(vbuf);
-        if(base && vbase) {
-            for(size_t y=0; y<h && y<vh; y++) {
-                size_t cp = (w<vw?w:vw)*4;
-                if(cp>bpr) cp=bpr; if(cp>vbpr) cp=vbpr;
-                memcpy(base+y*bpr, vbase+(y*vh/h)*vbpr, cp);
-            }
-        }
-        CVPixelBufferUnlockBaseAddress(vbuf, kCVPixelBufferLock_ReadOnly);
-        CVPixelBufferUnlockBaseAddress(pb, 0);
-    }
-
-    CFRelease(vsb);
-    return buf;
-}
 
     if(is420v(fmt)) {
         // 420v: copy plane data directly
