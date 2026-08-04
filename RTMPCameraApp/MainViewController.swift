@@ -47,7 +47,7 @@ class MainViewController: UIViewController {
     private var phoneIP = ""
     private var logLines: [String] = []
     private let defaultRTMPPort = 1935
-    private let appVersion = "1.0.70"
+    private let appVersion = "1.0.75"
     private let tweakDir = "/var/mobile/Documents/rtmpcamera"
     private let tweakCfgFile = "/var/mobile/Documents/rtmpcamera/config.plist"
     private let tweakVideoFile = "/var/mobile/Documents/rtmpcamera/current_video.mp4"
@@ -357,7 +357,7 @@ class MainViewController: UIViewController {
     }
 
     @objc private func selectVideoTapped() {
-        let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.movie, .mpeg4Movie, .quickTimeMovie])
+        let picker = UIDocumentPickerViewController(documentTypes: ["public.movie", "public.data", "public.item"], in: .import)
         picker.allowsMultipleSelection = false
         picker.delegate = self
         present(picker, animated: true)
