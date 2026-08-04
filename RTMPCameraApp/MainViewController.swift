@@ -128,33 +128,33 @@ class MainViewController: UIViewController {
         addLog("======== RTMPCamera v\(appVersion) ========")
         addResult("App Sandbox", true, NSHomeDirectory())
         let tweakLoaded = FileManager.default.fileExists(atPath: tweakLoadedFile)
-        addResult("Tweak 娉ㄥ叆", tweakLoaded, tweakLoaded ? "tweak_loaded 宸插彂鐜? : "鏈敞鍏ワ紝璇稲espring!")
-        addResult("閰嶇疆鐩綍", FileManager.default.fileExists(atPath: tweakDir))
+        addResult("Tweak 注入", tweakLoaded, tweakLoaded ? "tweak_loaded 已发现" : "未注入，请Respring!")
+        addResult("配置目录", FileManager.default.fileExists(atPath: tweakDir))
         if let attrs = try? FileManager.default.attributesOfItem(atPath: tweakDir) {
-            addLog("  鐩綍鏉冮檺: \(attrs[.posixPermissions] ?? 0) owner: \(attrs[.ownerAccountName] ?? "?")")
+            addLog("  目录权限: \(attrs[.posixPermissions] ?? 0) owner: \(attrs[.ownerAccountName] ?? "?")")
         }
-        addResult("閰嶇疆鏂囦欢", FileManager.default.fileExists(atPath: tweakCfgFile))
-        addResult("Tweak 鏃ュ織", FileManager.default.fileExists(atPath: tweakLogFile))
+        addResult("配置文件", FileManager.default.fileExists(atPath: tweakCfgFile))
+        addResult("Tweak 日志", FileManager.default.fileExists(atPath: tweakLogFile))
         if let tl = try? String(contentsOfFile: tweakLogFile, encoding: .utf8) {
             let lines = tl.components(separatedBy: "\n").filter { !$0.isEmpty }
-            addLog("  Tweak 鏃ュ織 (鏈€鍚?琛?:")
+            addLog("  Tweak 日志 (最后5行):")
             for l in lines.suffix(5) { addLog("  \(l)") }
         }
-        addResult("鐩告満鏉冮檺", AVCaptureDevice.authorizationStatus(for: .video).rawValue == 3, "code=\(AVCaptureDevice.authorizationStatus(for: .video).rawValue)")
+        addResult("相机权限", AVCaptureDevice.authorizationStatus(for: .video).rawValue == 3, "code=\(AVCaptureDevice.authorizationStatus(for: .video).rawValue)")
         if !localVideoPath.isEmpty {
-            addResult("宸查€夎棰?, FileManager.default.fileExists(atPath: localVideoPath), localVideoPath)
+            addResult("已选视频", FileManager.default.fileExists(atPath: localVideoPath), localVideoPath)
         }
-        addResult("Tweak瑙嗛鏂囦欢", FileManager.default.fileExists(atPath: tweakVideoFile), tweakVideoFile)
-        addLog("褰撳墠瑙嗛婧? \(sourceName())")
-        addLog("娉ㄥ叆鐘舵€? 瑙嗛=\(videoInjectionOn ? "寮€" : "鍏?) 闊抽=\(audioInjectionOn ? "寮€" : "鍏?) 寰幆=\(loopEnabled ? "寮€" : "鍏?)")
+        addResult("Tweak视频文件", FileManager.default.fileExists(atPath: tweakVideoFile), tweakVideoFile)
+        addLog("当前视频源: \(sourceName())")
+        addLog("注入状态: 视频=\(videoInjectionOn ? "开" : "关") 音频=\(audioInjectionOn ? "开" : "关") 循环=\(loopEnabled ? "开" : "关")")
         addLog("==========================================")
     }
 
     private func sourceName() -> String {
         switch currentSource {
-        case .realCamera: return "鐪熷疄鎽勫儚澶?
-        case .rtmpStream: return "RTMP娴?
-        case .localVideo: return "鏈湴瑙嗛"
+        case .realCamera: return "真实摄像头"
+        case .rtmpStream: return "RTMP流"
+        case .localVideo: return "本地视频"
         }
     }
 
@@ -164,14 +164,14 @@ class MainViewController: UIViewController {
             AVCaptureDevice.requestAccess(for: .video) { [weak self] granted in
                 DispatchQueue.main.async {
                     if granted { self?.startCameraPreview() }
-                    else { self?.addLog("[FAIL] 鐩告満鏉冮檺琚嫆缁?) }
+                    else { self?.addLog("[FAIL] 相机权限被拒绝") }
                 }
             }
-            addLog("姝ｅ湪璇锋眰鐩告満鏉冮檺...")
+            addLog("正在请求相机权限...")
             return
         }
         if status == .denied || status == .restricted {
-            addLog("[FAIL] 鐩告満鏉冮檺琚嫆缁?code=\(status.rawValue))锛岃鍦ㄨ缃腑寮€鍚?)
+            addLog("[FAIL] 相机权限被拒绝(code=\(status.rawValue))，请在设置中开启")
             return
         }
         startCameraPreview()
@@ -181,7 +181,7 @@ class MainViewController: UIViewController {
         captureSession = AVCaptureSession()
         guard let device = AVCaptureDevice.default(for: .video),
               let input = try? AVCaptureDeviceInput(device: device) else {
-            addLog("鐩告満鍚姩澶辫触")
+            addLog("相机启动失败")
             return
         }
         captureSession?.addInput(input)
@@ -190,7 +190,7 @@ class MainViewController: UIViewController {
         previewLayer?.videoGravity = .resizeAspectFill
         previewView.layer.addSublayer(previewLayer!)
         DispatchQueue.global(qos: .userInitiated).async { self.captureSession?.startRunning() }
-        addLog("[OK] 鐩告満棰勮宸插惎鍔?)
+        addLog("[OK] 相机预览已启动")
     }
 
     private func stopCameraPreview() {
@@ -206,7 +206,7 @@ class MainViewController: UIViewController {
         let asset = AVAsset(url: url)
         let videoTracks = asset.tracks(withMediaType: .video)
         if videoTracks.isEmpty {
-            addLog("[FAIL] 瑙嗛鏃犳湁鏁堣棰戣建閬? \(path)")
+            addLog("[FAIL] 视频无有效视频轨道: \(path)")
             return
         }
         videoPlayer = AVPlayer(url: url)
@@ -215,7 +215,7 @@ class MainViewController: UIViewController {
         videoPlayerLayer?.videoGravity = .resizeAspectFill
         previewView.layer.addSublayer(videoPlayerLayer!)
         videoPlayer?.play()
-        addLog("[OK] 瑙嗛棰勮 - \(url.lastPathComponent)")
+        addLog("[OK] 视频预览 - \(url.lastPathComponent)")
         if loopEnabled {
             NotificationCenter.default.addObserver(forName: .AVPlayerItemDidPlayToEndTime, object: videoPlayer?.currentItem, queue: .main) { [weak self] _ in
                 self?.videoPlayer?.seek(to: CMTime.zero)
@@ -246,27 +246,27 @@ class MainViewController: UIViewController {
 
     private func validateAndCopyVideo() -> Bool {
         guard !localVideoPath.isEmpty else {
-            addLog("[FAIL] 鏈€夋嫨瑙嗛鏂囦欢")
+            addLog("[FAIL] 未选择视频文件")
             return false
         }
         let asset = AVAsset(url: URL(fileURLWithPath: localVideoPath))
         let videoTracks = asset.tracks(withMediaType: .video)
         if videoTracks.isEmpty {
-            addLog("[FAIL] 瑙嗛鏃犳湁鏁堣棰戣建閬擄紝璇烽€夋嫨姝ｇ‘鐨凪P4鏂囦欢")
+            addLog("[FAIL] 视频无有效视频轨道，请选择正确的MP4文件")
             return false
         }
-        addLog("瑙嗛杞ㄩ亾: \(videoTracks.count)鏉? 鏃堕暱: \(asset.duration.seconds)绉?)
+        addLog("视频轨道: \(videoTracks.count)条, 时长: \(asset.duration.seconds)秒")
         let fm = FileManager.default
         try? fm.removeItem(atPath: tweakDir)
         try? fm.createDirectory(atPath: tweakDir, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o777])
-        addResult("鐩綍鍒涘缓", fm.fileExists(atPath: tweakDir), tweakDir)
+        addResult("目录创建", fm.fileExists(atPath: tweakDir), tweakDir)
         if fm.fileExists(atPath: tweakVideoFile) { try? fm.removeItem(atPath: tweakVideoFile) }
         do {
             try fm.copyItem(atPath: localVideoPath, toPath: tweakVideoFile)
-            addResult("瑙嗛澶嶅埗", true, tweakVideoFile)
+            addResult("视频复制", true, tweakVideoFile)
             return true
         } catch {
-            addResult("瑙嗛澶嶅埗", false, error.localizedDescription)
+            addResult("视频复制", false, error.localizedDescription)
             return false
         }
     }
@@ -283,40 +283,40 @@ class MainViewController: UIViewController {
         do {
             let data = try PropertyListSerialization.data(fromPropertyList: cfg, format: .xml, options: 0)
             try data.write(to: URL(fileURLWithPath: tweakCfgFile))
-            addResult("閰嶇疆鍐欏叆", true, tweakCfgFile)
+            addResult("配置写入", true, tweakCfgFile)
             return true
         } catch {
-            addResult("閰嶇疆鍐欏叆", false, error.localizedDescription)
+            addResult("配置写入", false, error.localizedDescription)
             return false
         }
     }
 
     @objc func applySettings() {
-        addLog("搴旂敤璁剧疆: \(sourceName()) 娉ㄥ叆瑙嗛=\(videoInjectionOn ? "寮€" : "鍏?) 娉ㄥ叆闊抽=\(audioInjectionOn ? "寮€" : "鍏?) 寰幆=\(loopEnabled ? "寮€" : "鍏?)")
+        addLog("应用设置: \(sourceName()) 注入视频=\(videoInjectionOn ? "开" : "关") 注入音频=\(audioInjectionOn ? "开" : "关") 循环=\(loopEnabled ? "开" : "关")")
         stopLocalVideo()
         switch currentSource {
         case .realCamera:
             stopLocalVideo()
             previewView.layer.sublayers?.forEach { $0.removeFromSuperlayer() }
             requestCameraAndStart()
-            addLog("宸插垏鎹㈠埌鐪熷疄鎽勫儚澶?)
+            addLog("已切换到真实摄像头")
         case .rtmpStream:
             stopLocalVideo()
             previewView.layer.sublayers?.forEach { $0.removeFromSuperlayer() }
             requestCameraAndStart()
-            addLog("RTMP娴佹ā寮忥紙寰呭畧鎶よ繘绋嬫敮鎸侊級")
+            addLog("RTMP流模式（待守护进程支持）")
         case .localVideo:
             if validateAndCopyVideo() {
                 playLocalVideo(tweakVideoFile)
                 saveConfig()
-                addLog("璁剧疆宸插簲鐢? \(sourceName())")
+                addLog("设置已应用: \(sourceName())")
             } else {
                 startCameraPreview()
             }
         }
         if currentSource != .localVideo {
             saveConfig()
-            addLog("璁剧疆宸插簲鐢? \(sourceName())")
+            addLog("设置已应用: \(sourceName())")
         }
     }
 
@@ -330,14 +330,14 @@ class MainViewController: UIViewController {
         videoInjectionSwitch.isOn = true
         audioInjectionSwitch.isOn = false
         loopSwitch.isOn = true
-        localVideoPathLabel.text = "鏈€夋嫨瑙嗛"
+        localVideoPathLabel.text = "未选择视频"
         localVideoPathLabel.textColor = .secondaryLabel
         updateSourceButtons()
         updateCardVisibility()
         stopLocalVideo()
         startCameraPreview()
         saveConfig()
-        addLog("宸茶繕鍘熼粯璁よ缃?)
+        addLog("已还原默认设置")
     }
 
     @objc private func copyLog() {
@@ -347,17 +347,17 @@ class MainViewController: UIViewController {
             fullLog += "\n\n--- tweak.log ---\n" + tl
         }
         UIPasteboard.general.string = fullLog
-        addLog("鏃ュ織宸插鍒?(鍏盶(fullLog.count)瀛楃)")
+        addLog("日志已复制 (共\(fullLog.count)字符)")
     }
 
     @objc private func clearLog() {
         logLines.removeAll()
         logTextView.text = ""
-        addLog("鏃ュ織宸叉竻闄?)
+        addLog("日志已清除")
     }
 
     @objc private func selectVideoTapped() {
-        let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.movie, .mpeg4Movie, .quickTimeMovie])
+        let picker = UIDocumentPickerViewController(documentTypes: ["public.movie", "public.data", "public.item"], in: .import)
         picker.allowsMultipleSelection = false
         picker.delegate = self
         present(picker, animated: true)
@@ -366,12 +366,12 @@ class MainViewController: UIViewController {
     @objc private func floatButtonTapped() {
         if FloatingWindowManager.shared.isShowingWindow {
             FloatingWindowManager.shared.hide()
-            floatBtn.setTitle("鎮诞绐楀彛", for: .normal)
-            addLog("鎮诞绐楀彛宸查殣钘?)
+            floatBtn.setTitle("悬浮窗口", for: .normal)
+            addLog("悬浮窗口已隐藏")
         } else {
             FloatingWindowManager.shared.show(with: self)
-            floatBtn.setTitle("鍏抽棴鎮诞", for: .normal)
-            addLog("鎮诞绐楀彛宸叉樉绀?)
+            floatBtn.setTitle("关闭悬浮", for: .normal)
+            addLog("悬浮窗口已显示")
         }
     }
 
@@ -408,7 +408,7 @@ class MainViewController: UIViewController {
         view.backgroundColor = .systemGroupedBackground
         title = "RTMPCamera"
         navigationController?.navigationBar.prefersLargeTitles = false
-        let resetBtn = UIBarButtonItem(title: "杩樺師璁剧疆", style: .plain, target: self, action: #selector(resetAllSettings))
+        let resetBtn = UIBarButtonItem(title: "还原设置", style: .plain, target: self, action: #selector(resetAllSettings))
         navigationItem.rightBarButtonItem = resetBtn
 
         let w = view.bounds.width
@@ -450,7 +450,7 @@ class MainViewController: UIViewController {
         statusIndicator.layer.cornerRadius = 5
         statusCard.addSubview(statusIndicator)
         statusTitleLabel.frame = CGRect(x: 28, y: 8, width: w - 80, height: 22)
-        statusTitleLabel.text = "杩愯鐘舵€?
+        statusTitleLabel.text = "运行状态"
         statusTitleLabel.font = .boldSystemFont(ofSize: 15)
         statusCard.addSubview(statusTitleLabel)
         versionLabel.frame = CGRect(x: w - 60, y: 8, width: 52, height: 22)
@@ -460,7 +460,7 @@ class MainViewController: UIViewController {
         versionLabel.textAlignment = .right
         statusCard.addSubview(versionLabel)
         statusLabel.frame = CGRect(x: 28, y: 32, width: w - 40, height: 18)
-        statusLabel.text = "Tweak娉ㄥ叆涓?.."
+        statusLabel.text = "Tweak注入中..."
         statusLabel.font = .systemFont(ofSize: 12)
         statusLabel.textColor = .secondaryLabel
         statusCard.addSubview(statusLabel)
@@ -475,11 +475,11 @@ class MainViewController: UIViewController {
     private func setupSourceCard() {
         let w = sourceCard.bounds.width
         let titleLabel = UILabel(frame: CGRect(x: 12, y: 8, width: w - 24, height: 22))
-        titleLabel.text = "瑙嗛婧愰€夋嫨"
+        titleLabel.text = "视频源选择"
         titleLabel.font = .boldSystemFont(ofSize: 15)
         sourceCard.addSubview(titleLabel)
         let btns = sourceButtons
-        let titles = ["鐪熷疄鎽勫儚澶?, "RTMP娴?, "鏈湴瑙嗛"]
+        let titles = ["真实摄像头", "RTMP流", "本地视频"]
         let btnW = (w - 36) / 3
         for (i, btn) in btns.enumerated() {
             btn.frame = CGRect(x: 12 + CGFloat(i) * (btnW + 6), y: 36, width: btnW, height: 36)
@@ -489,7 +489,7 @@ class MainViewController: UIViewController {
             sourceCard.addSubview(btn)
         }
         applyButton.frame = CGRect(x: 12, y: 78, width: w - 24, height: 26)
-        applyButton.setTitle("搴旂敤璁剧疆", for: .normal)
+        applyButton.setTitle("应用设置", for: .normal)
         applyButton.backgroundColor = .systemBlue
         applyButton.setTitleColor(.white, for: .normal)
         applyButton.titleLabel?.font = .boldSystemFont(ofSize: 13)
@@ -501,19 +501,19 @@ class MainViewController: UIViewController {
     private func setupLocalVideoCard() {
         let w = localVideoCard.bounds.width
         let titleLabel = UILabel(frame: CGRect(x: 12, y: 8, width: w - 24, height: 22))
-        titleLabel.text = "鏈湴瑙嗛"
+        titleLabel.text = "本地视频"
         titleLabel.font = .boldSystemFont(ofSize: 15)
         localVideoCard.addSubview(titleLabel)
         loopSwitch.frame = CGRect(x: w - 62, y: 6, width: 51, height: 28)
         localVideoCard.addSubview(loopSwitch)
         let loopLabel = UILabel(frame: CGRect(x: w - 110, y: 10, width: 46, height: 20))
-        loopLabel.text = "寰幆"
+        loopLabel.text = "循环"
         loopLabel.font = .systemFont(ofSize: 12)
         loopLabel.textColor = .secondaryLabel
         loopLabel.textAlignment = .right
         localVideoCard.addSubview(loopLabel)
         selectVideoButton.frame = CGRect(x: 12, y: 36, width: w - 24, height: 32)
-        selectVideoButton.setTitle("閫夋嫨瑙嗛 (MP4)...", for: .normal)
+        selectVideoButton.setTitle("选择视频 (MP4)...", for: .normal)
         selectVideoButton.titleLabel?.font = .systemFont(ofSize: 13)
         selectVideoButton.backgroundColor = .systemBlue.withAlphaComponent(0.1)
         selectVideoButton.setTitleColor(.systemBlue, for: .normal)
@@ -521,7 +521,7 @@ class MainViewController: UIViewController {
         selectVideoButton.addTarget(self, action: #selector(selectVideoTapped), for: .touchUpInside)
         localVideoCard.addSubview(selectVideoButton)
         localVideoPathLabel.frame = CGRect(x: 12, y: 72, width: w - 24, height: 20)
-        localVideoPathLabel.text = "鏈€夋嫨瑙嗛"
+        localVideoPathLabel.text = "未选择视频"
         localVideoPathLabel.font = .systemFont(ofSize: 11)
         localVideoPathLabel.textColor = .secondaryLabel
         localVideoCard.addSubview(localVideoPathLabel)
@@ -530,7 +530,7 @@ class MainViewController: UIViewController {
     private func setupRTMPCard() {
         let w = rtmpCard.bounds.width
         let titleLabel = UILabel(frame: CGRect(x: 12, y: 8, width: w - 24, height: 22))
-        titleLabel.text = "RTMP 鎺ユ敹鍦板潃"
+        titleLabel.text = "RTMP 接收地址"
         titleLabel.font = .boldSystemFont(ofSize: 15)
         rtmpCard.addSubview(titleLabel)
         rtmpURLLabel.frame = CGRect(x: 12, y: 34, width: w - 80, height: 22)
@@ -540,13 +540,13 @@ class MainViewController: UIViewController {
         rtmpURLLabel.adjustsFontSizeToFitWidth = true
         rtmpCard.addSubview(rtmpURLLabel)
         rtmpCopyButton.frame = CGRect(x: w - 62, y: 34, width: 50, height: 22)
-        rtmpCopyButton.setTitle("澶嶅埗", for: .normal)
+        rtmpCopyButton.setTitle("复制", for: .normal)
         rtmpCopyButton.titleLabel?.font = .boldSystemFont(ofSize: 11)
         rtmpCopyButton.setTitleColor(.systemBlue, for: .normal)
         rtmpCopyButton.addTarget(self, action: #selector(copyRTMP), for: .touchUpInside)
         rtmpCard.addSubview(rtmpCopyButton)
         rtmpHintLabel.frame = CGRect(x: 12, y: 58, width: w - 24, height: 30)
-        rtmpHintLabel.text = "OBS鎺ㄦ祦鍒版鍦板潃锛屾墜鏈虹鑷姩鎺ユ敹銆傜鍙? \(defaultRTMPPort)"
+        rtmpHintLabel.text = "OBS推流到此地址，手机端自动接收。端口: \(defaultRTMPPort)"
         rtmpHintLabel.font = .systemFont(ofSize: 10)
         rtmpHintLabel.textColor = .secondaryLabel
         rtmpHintLabel.numberOfLines = 2
@@ -557,25 +557,25 @@ class MainViewController: UIViewController {
     private func setupInjectionCard() {
         let w = injectionCard.bounds.width
         let titleLabel = UILabel(frame: CGRect(x: 12, y: 8, width: w - 24, height: 22))
-        titleLabel.text = "娉ㄥ叆鎺у埗"
+        titleLabel.text = "注入控制"
         titleLabel.font = .boldSystemFont(ofSize: 15)
         injectionCard.addSubview(titleLabel)
         let videoLabel = UILabel(frame: CGRect(x: 12, y: 42, width: 80, height: 24))
-        videoLabel.text = "娉ㄥ叆瑙嗛"
+        videoLabel.text = "注入视频"
         videoLabel.font = .systemFont(ofSize: 13)
         injectionCard.addSubview(videoLabel)
         videoInjectionSwitch.frame = CGRect(x: 100, y: 40, width: 51, height: 28)
         videoInjectionSwitch.isOn = true
         injectionCard.addSubview(videoInjectionSwitch)
         let audioLabel = UILabel(frame: CGRect(x: 170, y: 42, width: 80, height: 24))
-        audioLabel.text = "娉ㄥ叆闊抽"
+        audioLabel.text = "注入音频"
         audioLabel.font = .systemFont(ofSize: 13)
         injectionCard.addSubview(audioLabel)
         audioInjectionSwitch.frame = CGRect(x: 250, y: 40, width: 51, height: 28)
         audioInjectionSwitch.isOn = false
         injectionCard.addSubview(audioInjectionSwitch)
         floatBtn.frame = CGRect(x: 12, y: 76, width: w - 24, height: 26)
-        floatBtn.setTitle("鎮诞绐楀彛", for: .normal)
+        floatBtn.setTitle("悬浮窗口", for: .normal)
         floatBtn.backgroundColor = .systemGray.withAlphaComponent(0.15)
         floatBtn.setTitleColor(.label, for: .normal)
         floatBtn.titleLabel?.font = .systemFont(ofSize: 13)
@@ -594,17 +594,17 @@ class MainViewController: UIViewController {
     private func setupLogCard() {
         let w = logCard.bounds.width
         let titleLabel = UILabel(frame: CGRect(x: 12, y: 4, width: 100, height: 22))
-        titleLabel.text = "杩愯鏃ュ織"
+        titleLabel.text = "运行日志"
         titleLabel.font = .boldSystemFont(ofSize: 13)
         logCard.addSubview(titleLabel)
         clearLogBtn.frame = CGRect(x: w - 120, y: 4, width: 50, height: 22)
-        clearLogBtn.setTitle("娓呴櫎", for: .normal)
+        clearLogBtn.setTitle("清除", for: .normal)
         clearLogBtn.titleLabel?.font = .boldSystemFont(ofSize: 11)
         clearLogBtn.setTitleColor(.systemRed, for: .normal)
         clearLogBtn.addTarget(self, action: #selector(clearLog), for: .touchUpInside)
         logCard.addSubview(clearLogBtn)
         copyLogBtn.frame = CGRect(x: w - 60, y: 4, width: 50, height: 22)
-        copyLogBtn.setTitle("澶嶅埗", for: .normal)
+        copyLogBtn.setTitle("复制", for: .normal)
         copyLogBtn.titleLabel?.font = .boldSystemFont(ofSize: 11)
         copyLogBtn.setTitleColor(.systemBlue, for: .normal)
         copyLogBtn.addTarget(self, action: #selector(copyLog), for: .touchUpInside)
@@ -631,7 +631,7 @@ class MainViewController: UIViewController {
 
     @objc private func copyRTMP() {
         UIPasteboard.general.string = rtmpURL
-        addLog("RTMP鍦板潃宸插鍒?)
+        addLog("RTMP地址已复制")
     }
 
     private func updateSourceButtons() {
@@ -656,9 +656,9 @@ extension MainViewController: UIDocumentPickerDelegate {
         let a = url.startAccessingSecurityScopedResource()
         defer { if a { url.stopAccessingSecurityScopedResource() } }
         localVideoPath = url.path
-        localVideoPathLabel.text = "鉁?\(url.lastPathComponent)"
+        localVideoPathLabel.text = "✅ \(url.lastPathComponent)"
         localVideoPathLabel.textColor = .label
-        addLog("宸查€夋嫨: \(url.lastPathComponent)")
+        addLog("已选择: \(url.lastPathComponent)")
     }
 }
 
@@ -685,7 +685,7 @@ class FloatingWindowManager: NSObject {
         floatWindow?.layer.shadowRadius = 8
         floatWindow?.windowLevel = .alert + 1
         let btn = UIButton(frame: floatWindow!.bounds)
-        btn.setTitle("馃摲", for: .normal)
+        btn.setTitle("📷", for: .normal)
         btn.titleLabel?.font = .systemFont(ofSize: 30)
         btn.addTarget(self, action: #selector(floatTapped), for: .touchUpInside)
         floatWindow?.addSubview(btn)
@@ -696,11 +696,11 @@ class FloatingWindowManager: NSObject {
     func hide() { floatWindow?.isHidden = true; floatWindow = nil; isShowing = false }
     @objc private func floatTapped() {
         guard let vc = parentVC else { return }
-        let alert = UIAlertController(title: "蹇€熷垏鎹?, message: nil, preferredStyle: .actionSheet)
-        alert.addAction(UIAlertAction(title: "鐪熷疄鎽勫儚澶?, style: .default) { _ in vc.realCameraBtn.sendActions(for: .touchUpInside); vc.applySettings() })
-        alert.addAction(UIAlertAction(title: "鏈湴瑙嗛", style: .default) { _ in vc.localVideoBtn.sendActions(for: .touchUpInside); vc.applySettings() })
-        alert.addAction(UIAlertAction(title: "闅愯棌鎮诞绐?, style: .destructive) { [weak self] _ in self?.hide() })
-        alert.addAction(UIAlertAction(title: "鍙栨秷", style: .cancel))
+        let alert = UIAlertController(title: "快速切换", message: nil, preferredStyle: .actionSheet)
+        alert.addAction(UIAlertAction(title: "真实摄像头", style: .default) { _ in vc.realCameraBtn.sendActions(for: .touchUpInside); vc.applySettings() })
+        alert.addAction(UIAlertAction(title: "本地视频", style: .default) { _ in vc.localVideoBtn.sendActions(for: .touchUpInside); vc.applySettings() })
+        alert.addAction(UIAlertAction(title: "隐藏悬浮窗", style: .destructive) { [weak self] _ in self?.hide() })
+        alert.addAction(UIAlertAction(title: "取消", style: .cancel))
         vc.present(alert, animated: true)
     }
     @objc private func floatPanned(_ pan: UIPanGestureRecognizer) {
