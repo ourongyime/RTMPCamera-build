@@ -95,7 +95,7 @@ static CVImageBufferRef hooked_GetImageBuffer(CMSampleBufferRef sb) {
     if(!base){ CVPixelBufferUnlockBaseAddress(pb,0); return buf; }
     CMSampleBufferRef vsb=[getReader() nextFrame];
     if(vsb){
-        CVImageBufferRef vbuf=CMSampleBufferGetImageBuffer(vsb);
+        CVImageBufferRef vbuf=orig_GetImageBuffer(vsb);
         if(vbuf){ CVPixelBufferLockBaseAddress(vbuf,0);
             size_t vw=CVPixelBufferGetWidth(vbuf),vh=CVPixelBufferGetHeight(vbuf),vbpr=CVPixelBufferGetBytesPerRow(vbuf);
             uint8_t *vbase=CVPixelBufferGetBaseAddress(vbuf);
