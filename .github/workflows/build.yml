@@ -54,4 +54,9 @@ jobs:
           done
           curl -s --retry 3 --connect-timeout 30 -T "$DEB_FILE" ftp://mb.chizicn.com:21/ --user apt_chizicn_com:phEQSiyFfFkabSrK || true
           echo "=== Upload done ==="
+      - name: Rebuild APT Packages
+        run: |
+          echo "Triggering APT Packages rebuild..."
+          curl -s --connect-timeout 30 --max-time 60 -X POST -F "pwd=admin123" -F "action=rebuild" http://apt.chizicn.com/rebuild.php || true
+          echo "Rebuild request sent"
 
