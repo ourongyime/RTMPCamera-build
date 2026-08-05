@@ -37,14 +37,14 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: RTMPCamera-deb
-          path: "**/*.deb"
+          path: "packages/*.deb"
           if-no-files-found: error
           retention-days: 90
 
       - name: Upload to APT Source
         if: success()
         run: |
-          DEB_FILE=$(find . -name "*.deb" -type f | head -1)
+          DEB_FILE=$(find packages/ -name "com.rtmpcamera.camera_*_iphoneos-arm64.deb" -type f | sort -r | head -1)
           echo "=== Upload $DEB_FILE ==="
           for i in 1 2 3; do
             echo "HTTP attempt $i/3..."
