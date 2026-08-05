@@ -71,6 +71,7 @@ ftp.retrbinary('RETR Packages', buf.write)
 buf.seek(0)
 text = buf.read().decode('utf-8')
 text = text.replace('Architecture: iphoneos-arm64', 'Architecture: iphoneos-arm64e')
+# Upload fixed root Packages
 ftp.storbinary('STOR Packages', io.BytesIO(text.encode('utf-8')))
 
 gz_buf = io.BytesIO()
@@ -78,6 +79,18 @@ with gzip.GzipFile(fileobj=gz_buf, mode='wb') as gz:
     gz.write(text.encode('utf-8'))
 gz_buf.seek(0)
 ftp.storbinary('STOR Packages.gz', gz_buf)
+
+# Sync to all architecture subdirectories
+for subdir in [
+    'dists/stable/main/binary-iphoneos-arm',
+    'dists/stable/main/binary-iphoneos-arm64',
+    'dists/stable/main/binary-iphoneos-arm64-arm64e',
+    'dists/stable/main/binary-iphoneos-arm64e',
+]:
+    ftp.cwd('/' + subdir)
+    gz_buf.seek(0)
+    ftp.storbinary('STOR Packages', io.BytesIO(text.encode('utf-8')))
+    ftp.storbinary('STOR Packages.gz', gz_buf)
 
 buf2 = io.BytesIO()
 ftp.retrbinary('RETR Release', buf2.write)
