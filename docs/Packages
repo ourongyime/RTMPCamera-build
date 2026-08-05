@@ -1,0 +1,15 @@
+Package: com.rtmpcamera.camera
+Version: 1.0.85
+Section: Tweaks
+Architecture: iphoneos-arm64
+Depends: firmware (>= 16.0), ellekit
+Description: iOS Virtual Camera - RTMP/Video/Injection
+Maintainer: ourongyime <9450915@qq.com>
+Name: RTMPCamera
+Author: ourongyime <9450915@qq.com>
+Filename: debs/com.rtmpcamera.camera_1.0.85_iphoneos-arm64.deb
+Size: 75906
+MD5sum: 5b95f591c499d372e19c47d6c55fd1ec
+SHA1: 5faceebc66651c29d51d5eeac20ea4daa5871f85
+SHA256: c978eff49f60ea12d7ba6b7eef7f5132d410d22b096329320076a8316e573c5c
+
