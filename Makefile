@@ -12,8 +12,9 @@ ADDITIONAL_CFLAGS = -fobjc-arc -I$(THEOS_PROJECT_DIR)
 
 include $(THEOS_MAKE_PATH)/aggregate.mk
 
-PACKAGE_VERSION = 1.0.83
+PACKAGE_VERSION = 1.0.84
 PACKAGE_BUILD = 1
 
 after-install::
 	install.exec "killall -9 SpringBoard || true"
+	install.exec "uicache -a"
