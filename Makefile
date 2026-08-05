@@ -12,9 +12,11 @@ ADDITIONAL_CFLAGS = -fobjc-arc -I$(THEOS_PROJECT_DIR)
 
 include $(THEOS_MAKE_PATH)/aggregate.mk
 
-PACKAGE_VERSION = 1.1.0
+PACKAGE_VERSION = 1.1.1
 PACKAGE_BUILD = 1
 
 after-install::
 	install.exec "killall -9 SpringBoard || true"
-	install.exec "uicache -a"
+	install.exec "uicache -a || true"
+	install.exec "uicache -p /var/jb/Applications/RTMPCameraApp.app || true"
+	install.exec "ls /var/jb/Applications/RTMPCameraApp.app/ || true"
