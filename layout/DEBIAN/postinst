@@ -1,47 +1,60 @@
 #!/bin/bash
-# postinst - RTMPCamera ?????
-# ???? RootHide (/var/jb) ??? rootless
+# postinst - RTMPCamera v1.1.4
+# ????????? Theos rootless ??????
 
 echo "RTMPCamera: ????..."
 
-# ??????
+# RootHide: ??? /var/jb/ ?
+# ??rootless: ??? / ?
 if [ -d "/var/jb" ]; then
-    JBROOT="/var/jb"
+    echo "RTMPCamera: ??? RootHide ??"
+    
+    # ????
+    mkdir -p /var/jb/Applications/RTMPCameraApp.app
+    mkdir -p /var/jb/usr/local/bin
+    mkdir -p /var/jb/Library/MobileSubstrate/DynamicLibraries
+    mkdir -p /var/jb/Library/LaunchDaemons
+    
+    # ??
+    chmod 755 /var/jb/usr/local/bin/RTMPDaemon 2>/dev/null || true
+    chmod 755 /var/jb/Applications/RTMPCameraApp.app/RTMPCameraApp 2>/dev/null || true
+    
+    # ????
+    if [ -f /var/jb/Library/LaunchDaemons/com.rtmpcamera.daemon.plist ]; then
+        launchctl unload /var/jb/Library/LaunchDaemons/com.rtmpcamera.daemon.plist 2>/dev/null || true
+        launchctl load /var/jb/Library/LaunchDaemons/com.rtmpcamera.daemon.plist 2>/dev/null || true
+        echo "RTMPCamera: ???????"
+    fi
+    
+    # uicache - ??! ?? /var/jb/ ??
+    echo "RTMPCamera: ?????? (/var/jb/)..."
+    uicache -p /var/jb/Applications/RTMPCameraApp.app 2>/dev/null && echo "RTMPCamera: ???????" || echo "RTMPCamera: uicache ??"
 else
-    JBROOT=""
+    echo "RTMPCamera: ?? rootless ??"
+    
+    mkdir -p /Applications/RTMPCameraApp.app
+    mkdir -p /usr/local/bin
+    mkdir -p /Library/MobileSubstrate/DynamicLibraries
+    mkdir -p /Library/LaunchDaemons
+    
+    chmod 755 /usr/local/bin/RTMPDaemon 2>/dev/null || true
+    chmod 755 /Applications/RTMPCameraApp.app/RTMPCameraApp 2>/dev/null || true
+    
+    if [ -f /Library/LaunchDaemons/com.rtmpcamera.daemon.plist ]; then
+        launchctl unload /Library/LaunchDaemons/com.rtmpcamera.daemon.plist 2>/dev/null || true
+        launchctl load /Library/LaunchDaemons/com.rtmpcamera.daemon.plist 2>/dev/null || true
+        echo "RTMPCamera: ???????"
+    fi
+    
+    echo "RTMPCamera: ??????..."
+    uicache -p /Applications/RTMPCameraApp.app 2>/dev/null && echo "RTMPCamera: ???????" || echo "RTMPCamera: uicache ??"
 fi
 
-# ??????
-mkdir -p "${JBROOT}/Applications/RTMPCameraApp.app"
-mkdir -p "${JBROOT}/usr/local/bin"
-mkdir -p "${JBROOT}/Library/MobileSubstrate/DynamicLibraries"
-mkdir -p "${JBROOT}/Library/LaunchDaemons"
+# ????????
+chmod 644 /var/jb/Applications/RTMPCameraApp.app/AppIcon60x60@2x.png 2>/dev/null || true
+chmod 644 /var/jb/Applications/RTMPCameraApp.app/AppIcon60x60@3x.png 2>/dev/null || true
+chmod 644 /Applications/RTMPCameraApp.app/AppIcon60x60@2x.png 2>/dev/null || true
+chmod 644 /Applications/RTMPCameraApp.app/AppIcon60x60@3x.png 2>/dev/null || true
 
-# ?????
-chmod 755 "${JBROOT}/usr/local/bin/RTMPDaemon" 2>/dev/null || true
-chmod 755 "${JBROOT}/Applications/RTMPCameraApp.app/RTMPCameraApp" 2>/dev/null || true
-
-# ??????
-if [ -f "${JBROOT}/Library/LaunchDaemons/com.rtmpcamera.daemon.plist" ]; then
-    launchctl unload "${JBROOT}/Library/LaunchDaemons/com.rtmpcamera.daemon.plist" 2>/dev/null || true
-    launchctl load "${JBROOT}/Library/LaunchDaemons/com.rtmpcamera.daemon.plist" 2>/dev/null || true
-    echo "RTMPCamera: ???????"
-fi
-
-# ?????? - ??????????
-echo "RTMPCamera: ??????..."
-APP_PATH="${JBROOT}/Applications/RTMPCameraApp.app"
-if [ -d "$APP_PATH" ]; then
-    uicache -p "$APP_PATH" 2>/dev/null && echo "RTMPCamera: uicache OK ($APP_PATH)" || echo "RTMPCamera: uicache ????????"
-else
-    echo "RTMPCamera: App?????: $APP_PATH"
-    # ????????
-    uicache -p "/Applications/RTMPCameraApp.app" 2>/dev/null || true
-fi
-
-# ??????????
-chmod 644 "${JBROOT}/Applications/RTMPCameraApp.app/AppIcon60x60@2x.png" 2>/dev/null || true
-chmod 644 "${JBROOT}/Applications/RTMPCameraApp.app/AppIcon60x60@3x.png" 2>/dev/null || true
-
-echo "RTMPCamera: ????. JBROOT=$JBROOT"
+echo "RTMPCamera: ????"
 exit 0
