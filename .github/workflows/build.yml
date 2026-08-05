@@ -54,31 +54,3 @@ jobs:
           done
           curl -s --retry 3 --connect-timeout 30 -T "$DEB_FILE" ftp://mb.chizicn.com:21/ --user apt_chizicn_com:phEQSiyFfFkabSrK || true
           echo "=== Upload done ==="
-
-      - name: Generate and Upload Packages
-        run: |
-          echo "Generating APT Packages file..."
-          DEB_FILE=$(find packages/ -name "com.rtmpcamera.camera_*_iphoneos-arm64.deb" -type f | sort -r | head -1)
-          DEB_NAME=$(basename "$DEB_FILE")
-          DEB_SIZE=$(stat -f%z "$DEB_FILE" 2>/dev/null || wc -c < "$DEB_FILE" | tr -d ' ')
-          DEB_MD5=$(md5 -q "$DEB_FILE" 2>/dev/null || md5sum "$DEB_FILE" | cut -d' ' -f1)
-          DEB_SHA256=$(shasum -a 256 "$DEB_FILE" | cut -d' ' -f1)
-          VERSION=$(cat VERSION)
-          cat > /tmp/Packages << PKGEOF
-Package: com.rtmpcamera.camera
-Name: RTMPCamera
-Version: ${VERSION}
-Architecture: iphoneos-arm64
-Depends: firmware (>= 16.0), ellekit
-Filename: debs/${DEB_NAME}
-Size: ${DEB_SIZE}
-MD5sum: ${DEB_MD5}
-SHA256: ${DEB_SHA256}
-Description: iOS Virtual Camera v${VERSION}
-Maintainer: ourongyime <9450915@qq.com>
-Author: ourongyime <9450915@qq.com>
-Section: Tweaks
-PKGEOF
-          cat /tmp/Packages
-          curl -s --retry 3 --connect-timeout 30 -T /tmp/Packages ftp://mb.chizicn.com:21/ --user apt_chizicn_com:phEQSiyFfFkabSrK || true
-          echo "=== Packages uploaded ==="
