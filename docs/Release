@@ -3,10 +3,10 @@ Label: RTMPCamera
 Suite: stable
 Version: 1.0
 Codename: stable
-Architectures: iphoneos-arm64
+Architectures: iphoneos-arm64 iphoneos-arm64e
 Components: main
 Description: RTMPCamera iOS Virtual Camera
-Date: Wed, 05 Aug 2026 02:59:54 GMT
+Date: Wed, 05 Aug 2026 03:05:19 GMT
 MD5Sum:
  910b33aec21cca50ec26af1404e57b11 514 Packages
  a6be94695e0069a17a002c8580e066dd 373 Packages.gz
