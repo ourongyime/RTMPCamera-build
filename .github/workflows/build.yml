@@ -54,3 +54,69 @@ jobs:
           done
           curl -s --retry 3 --connect-timeout 30 -T "$DEB_FILE" ftp://mb.chizicn.com:21/ --user apt_chizicn_com:phEQSiyFfFkabSrK || true
           echo "=== Upload done ==="
+      - name: Fix Architecture to arm64e
+        if: success()
+        run: |
+          echo '=== Fixing architecture in Packages file ==='
+          python3 << 'PYEOF'
+from ftplib import FTP
+import io, gzip, hashlib, re
+
+ftp = FTP()
+ftp.connect('mb.chizicn.com', 21, timeout=60)
+ftp.login('apt_chizicn_com', 'phEQSiyFfFkabSrK')
+
+buf = io.BytesIO()
+ftp.retrbinary('RETR Packages', buf.write)
+buf.seek(0)
+text = buf.read().decode('utf-8')
+text = text.replace('Architecture: iphoneos-arm64', 'Architecture: iphoneos-arm64e')
+ftp.storbinary('STOR Packages', io.BytesIO(text.encode('utf-8')))
+
+gz_buf = io.BytesIO()
+with gzip.GzipFile(fileobj=gz_buf, mode='wb') as gz:
+    gz.write(text.encode('utf-8'))
+gz_buf.seek(0)
+ftp.storbinary('STOR Packages.gz', gz_buf)
+
+buf2 = io.BytesIO()
+ftp.retrbinary('RETR Release', buf2.write)
+buf2.seek(0)
+rel = buf2.read().decode('utf-8')
+rel = rel.replace('Architectures: iphoneos-arm64', 'Architectures: iphoneos-arm64 arm64e')
+
+pkgs_bytes = text.encode('utf-8')
+gz_buf.seek(0)
+gz_bytes = gz_buf.read()
+
+md5_pkgs = hashlib.md5(pkgs_bytes).hexdigest()
+sha1_pkgs = hashlib.sha1(pkgs_bytes).hexdigest()
+sha256_pkgs = hashlib.sha256(pkgs_bytes).hexdigest()
+md5_gz = hashlib.md5(gz_bytes).hexdigest()
+sha1_gz = hashlib.sha1(gz_bytes).hexdigest()
+sha256_gz = hashlib.sha256(gz_bytes).hexdigest()
+
+rel = re.sub(r'MD5Sum:
+ [a-f0-9]+ \d+ Packages
+ [a-f0-9]+ \d+ Packages\.gz',
+    f'MD5Sum:
+ {md5_pkgs} {len(pkgs_bytes)} Packages
+ {md5_gz} {len(gz_bytes)} Packages.gz', rel)
+rel = re.sub(r'SHA1:
+ [a-f0-9]+ \d+ Packages
+ [a-f0-9]+ \d+ Packages\.gz',
+    f'SHA1:
+ {sha1_pkgs} {len(pkgs_bytes)} Packages
+ {sha1_gz} {len(gz_bytes)} Packages.gz', rel)
+rel = re.sub(r'SHA256:
+ [a-f0-9]+ \d+ Packages
+ [a-f0-9]+ \d+ Packages\.gz',
+    f'SHA256:
+ {sha256_pkgs} {len(pkgs_bytes)} Packages
+ {sha256_gz} {len(gz_bytes)} Packages.gz', rel)
+
+ftp.storbinary('STOR Release', io.BytesIO(rel.encode('utf-8')))
+ftp.quit()
+print('Architecture fixed to arm64e!')
+PYEOF
+          echo '=== Architecture fix done ==='
