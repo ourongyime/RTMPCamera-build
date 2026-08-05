@@ -1,0 +1,39 @@
+#!/bin/bash
+# postinst - RTMPCamera ?????
+# RootHide ??????
+
+if [ -d "/var/jb" ]; then
+    PREFIX="/var/jb"
+else
+    PREFIX=""
+fi
+
+echo "RTMPCamera: ????..."
+
+# ?????????
+mkdir -p "/Applications/RTMPCameraApp.app"
+mkdir -p "/usr/local/bin"
+mkdir -p "/Library/MobileSubstrate/DynamicLibraries"
+mkdir -p "/Library/LaunchDaemons"
+
+# ??????????
+chmod 755 "/usr/local/bin/RTMPDaemon" 2>/dev/null
+chmod 755 "/Applications/RTMPCameraApp.app/RTMPCameraApp" 2>/dev/null
+
+# ??????
+if [ -f "/Library/LaunchDaemons/com.rtmpcamera.daemon.plist" ]; then
+    launchctl unload "/Library/LaunchDaemons/com.rtmpcamera.daemon.plist" 2>/dev/null
+    launchctl load "/Library/LaunchDaemons/com.rtmpcamera.daemon.plist"
+    echo "RTMPCamera: ???????"
+fi
+
+# ?????? - ???????????????
+if command -v uicache &>/dev/null; then
+    uicache -p "/Applications/RTMPCameraApp.app"
+    echo "RTMPCamera: ???????"
+else
+    /usr/bin/uicache -p "/Applications/RTMPCameraApp.app" 2>/dev/null || echo "RTMPCamera: uicache ???"
+fi
+
+echo "RTMPCamera: ????"
+exit 0

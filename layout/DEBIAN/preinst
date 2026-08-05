@@ -1,0 +1,19 @@
+#!/bin/bash
+# preinst - RTMPCamera ?????
+
+if [ -d "/var/jb" ]; then
+    PREFIX="/var/jb"
+else
+    PREFIX=""
+fi
+
+echo "RTMPCamera: ?????..."
+
+# ????????????????
+if [ -f "/Library/LaunchDaemons/com.rtmpcamera.daemon.plist" ]; then
+    launchctl unload "/Library/LaunchDaemons/com.rtmpcamera.daemon.plist" 2>/dev/null
+    echo "RTMPCamera: ?????????"
+fi
+
+echo "RTMPCamera: ????"
+exit 0
